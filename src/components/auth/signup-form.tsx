@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ROLE_LABELS } from "@/lib/auth-utils";
@@ -15,10 +15,18 @@ interface Company {
 
 const SIGNUP_ROLES: Role[] = ["PROVIDER", "REP", "COMPANY_ADMIN"];
 
-export function SignupForm({ companies }: { companies: Company[] }) {
+export function SignupForm() {
   const [role, setRole] = useState<Role>("PROVIDER");
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/companies/public")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: Company[]) => setCompanies(data))
+      .catch(() => setCompanies([]));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -99,7 +107,12 @@ export function SignupForm({ companies }: { companies: Company[] }) {
               name="companyId"
               required
               options={[
-                { value: "", label: "Select a company" },
+                {
+                  value: "",
+                  label: companies.length
+                    ? "Select a company"
+                    : "Loading companies...",
+                },
                 ...companies.map((c) => ({ value: c.id, label: c.name })),
               ]}
             />
