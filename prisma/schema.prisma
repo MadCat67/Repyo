@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  REP
+  PROVIDER
+}
+
+enum RequestUrgency {
+  EMERGENCY
+  SAME_DAY
+  SCHEDULED
+}
+
+enum RequestType {
+  CASE
+  CHECK
+}
+
+enum RequestStatus {
+  SEARCHING
+  ASSIGNED
+  PENDING
+  ACCEPTED
+  EN_ROUTE
+  ARRIVED
+  COMPLETED
+  CANCELLED
+}
+
+enum RepStatus {
+  AVAILABLE
+  BUSY
+  OFF_DUTY
+  VACATION
+}
+
+enum CredentialStatus {
+  ACTIVE
+  PENDING
+  EXPIRED
+  REVOKED
+}
+
+model User {
+  id            String           @id @default(uuid())
+  role          Role
+  email         String           @unique
+  passwordHash  String
+  name          String
+  phone         String?
+  companyId     String?
+  company       Company?         @relation(fields: [companyId], references: [id])
+  repProfile    RepProfile?
+  providerInfo  ProviderProfile?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  providerRequests ServiceRequest[] @relation("ProviderRequests")
+  assignedRequests ServiceRequest[] @relation("AssignedRepRequests")
+  favoriteReps     FavoriteRep[]    @relation("ProviderFavorites")
+  favoritedBy      FavoriteRep[]    @relation("RepFavorites")
+  notifications    Notification[]
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  products  String[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  serviceRequests ServiceRequest[]
+  facilities      Facility[]
+}
+
+model Facility {
+  id        String   @id @default(uuid())
+  companyId String?
+  name      String
+  address   String
+  phone     String?
+  lat       Float?
+  lng       Float?
+  state     String?
+  county    String?
+  zipCode   String?
+  createdAt DateTime @default(now())
+
+  company   Company? @relation(fields: [companyId], references: [id])
+  territories Territory[]
+}
+
+model ProviderProfile {
+  userId           String   @id
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facilityName     String?
+  facilityAddress  String?
+  facilityPhone    String?
+  department       String?
+  defaultPhysician String?
+}
+
+model RepProfile {
+  userId            String           @id
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status            RepStatus        @default(OFF_DUTY)
+  travelRadiusMiles Float            @default(50)
+  maxTravelDistance Float            @default(100)
+  lat               Float?
+  lng               Float?
+  credentialStatus  CredentialStatus @default(PENDING)
+  symplrMerged      Boolean          @default(false)
+  vendormateMerged  Boolean          @default(false)
+  onCallEnabled     Boolean          @default(false)
+  products          String[]
+  companies         String[]
+  updatedAt         DateTime         @updatedAt
+
+  territories Territory[]
+}
+
+model Territory {
+  id           String  @id @default(uuid())
+  repProfileId String
+  state        String?
+  county       String?
+  zipCode      String?
+  facilityId   String?
+
+  repProfile RepProfile @relation(fields: [repProfileId], references: [userId], onDelete: Cascade)
+  facility   Facility?  @relation(fields: [facilityId], references: [id])
+
+  @@index([repProfileId])
+  @@index([state, county, zipCode])
+}
+
+model ServiceRequest {
+  id              String         @id @default(uuid())
+  providerId      String
+  companyId       String
+  assignedRepId   String?
+  facilityName    String
+  facilityAddr    String
+  facilityPhone   String?
+  facilityLat     Float?
+  facilityLng     Float?
+  department      String
+  physicianName   String
+  patientNameEnc  String
+  patientDOBEnc   String
+  procedureType   String
+  requestType     RequestType    @default(CASE)
+  product         String?
+  urgency         RequestUrgency
+  scheduledAt     DateTime
+  status          RequestStatus  @default(SEARCHING)
+  notes           String?
+  repLat          Float?
+  repLng          Float?
+  etaMinutes      Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  provider    User     @relation("ProviderRequests", fields: [providerId], references: [id])
+  company     Company  @relation(fields: [companyId], references: [id])
+  assignedRep User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
+  statusLogs  RequestStatusLog[]
+
+  @@index([providerId])
+  @@index([assignedRepId])
+  @@index([status])
+  @@index([companyId])
+}
+
+model RequestStatusLog {
+  id        String        @id @default(uuid())
+  requestId String
+  status    RequestStatus
+  note      String?
+  lat       Float?
+  lng       Float?
+  createdAt DateTime      @default(now())
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model FavoriteRep {
+  id         String   @id @default(uuid())
+  providerId String
+  repId      String
+  createdAt  DateTime @default(now())
+
+  provider User @relation("ProviderFavorites", fields: [providerId], references: [id], onDelete: Cascade)
+  rep      User @relation("RepFavorites", fields: [repId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, repId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}

@@ -1,0 +1,175 @@
+"use client";
+
+import { StatusBadge, UrgencyBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { StatusPipeline } from "@/components/shared/status-pipeline";
+import { format } from "date-fns";
+import { Heart, MapPin, Phone, User, X } from "lucide-react";
+import { useState } from "react";
+
+export interface RequestData {
+  id: string;
+  facilityName: string;
+  facilityAddr?: string;
+  procedureType: string;
+  urgency: string;
+  status: string;
+  scheduledAt: string;
+  department?: string;
+  physicianName?: string;
+  notes?: string | null;
+  etaMinutes?: number | null;
+  assignedRep?: { id: string; name: string; phone: string | null } | null;
+  provider?: { id: string; name: string; phone: string | null } | null;
+  company?: { name: string } | null;
+  statusLogs?: { status: string; createdAt: string; note?: string | null }[];
+}
+
+export function RequestCard({
+  request,
+  onAction,
+  onFavorite,
+  isFavorite,
+  role,
+  showPipeline = false,
+}: {
+  request: RequestData;
+  onAction?: (action: string, requestId: string) => void;
+  onFavorite?: (repId: string) => void;
+  isFavorite?: boolean;
+  role: "provider" | "rep" | "company";
+  showPipeline?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(showPipeline);
+
+  return (
+    <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+      <div className="flex-1">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-slate-900">{request.facilityName}</h3>
+              <UrgencyBadge urgency={request.urgency} />
+            </div>
+            <p className="mt-1 text-sm text-slate-600">{request.procedureType}</p>
+            {role === "company" && request.provider && (
+              <p className="text-xs text-slate-500">
+                Provider: {request.provider.name}
+              </p>
+            )}
+            {role !== "company" && request.company && (
+              <p className="text-xs text-slate-500">{request.company.name}</p>
+            )}
+            <p className="mt-1 text-xs text-slate-500">
+              {format(new Date(request.scheduledAt), "MMM d, yyyy 'at' h:mm a")}
+            </p>
+          </div>
+          <StatusBadge status={request.status} />
+        </div>
+
+        {(expanded || showPipeline) && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <StatusPipeline currentStatus={request.status} />
+            {request.department && (
+              <p className="mt-2 text-xs text-slate-500">
+                {request.department} · {request.physicianName}
+              </p>
+            )}
+            {request.notes && (
+              <p className="mt-2 text-sm text-slate-600">{request.notes}</p>
+            )}
+          </div>
+        )}
+
+        {!request.assignedRep && role === "company" && request.status === "SEARCHING" && (
+          <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Awaiting rep assignment
+          </div>
+        )}
+
+        {request.assignedRep && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-slate-400" />
+              <span className="font-medium">{request.assignedRep.name}</span>
+            </div>
+            {request.assignedRep.phone && (
+              <a
+                href={`tel:${request.assignedRep.phone}`}
+                className="flex items-center gap-1 text-rose-600 hover:underline"
+              >
+                <Phone className="h-4 w-4" />
+                Call
+              </a>
+            )}
+            {request.etaMinutes != null && request.status === "EN_ROUTE" && (
+              <span className="flex items-center gap-1 text-slate-500">
+                <MapPin className="h-4 w-4" />
+                ETA {request.etaMinutes} min
+              </span>
+            )}
+            {role === "provider" && onFavorite && request.assignedRep && (
+              <button
+                onClick={() => onFavorite(request.assignedRep!.id)}
+                className="flex items-center gap-1 text-rose-500 hover:text-rose-700"
+              >
+                <Heart className={`h-4 w-4 ${isFavorite ? "fill-rose-500" : ""}`} />
+                {isFavorite ? "Favorited" : "Favorite"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+        {!showPipeline && (
+          <Button size="sm" variant="ghost" onClick={() => setExpanded(!expanded)}>
+            {expanded ? "Hide" : "Track"} Status
+          </Button>
+        )}
+
+        {role === "rep" && request.status === "ASSIGNED" && onAction && (
+          <>
+            <Button size="sm" onClick={() => onAction("ACCEPTED", request.id)}>
+              Accept
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => onAction("CANCELLED", request.id)}>
+              Decline
+            </Button>
+          </>
+        )}
+
+        {role === "rep" && request.status === "ACCEPTED" && onAction && (
+          <Button size="sm" onClick={() => onAction("EN_ROUTE", request.id)}>
+            Mark En Route
+          </Button>
+        )}
+
+        {role === "rep" && request.status === "EN_ROUTE" && onAction && (
+          <Button size="sm" onClick={() => onAction("ARRIVED", request.id)}>
+            Mark Arrived
+          </Button>
+        )}
+
+        {role === "rep" && request.status === "ARRIVED" && onAction && (
+          <Button size="sm" onClick={() => onAction("COMPLETED", request.id)}>
+            Complete Case
+          </Button>
+        )}
+
+        {role === "provider" &&
+          !["COMPLETED", "CANCELLED"].includes(request.status) &&
+          onAction && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onAction("CANCELLED", request.id)}
+            >
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
+          )}
+      </div>
+    </div>
+  );
+}
