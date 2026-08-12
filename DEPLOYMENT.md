@@ -117,6 +117,10 @@ vercel --prod
 | Build fails on Prisma | Ensure `postinstall` runs (`prisma generate` in package.json) |
 | `Unauthorized` on API calls | Set `AUTH_URL` and `NEXT_PUBLIC_APP_URL` to your live domain |
 | Database connection errors | Use Neon **pooler** URL, not direct, for `DATABASE_URL` |
-| `MissingSecret` on login | Add `AUTH_SECRET` in Vercel → Settings → Environment Variables for **Production** (and Preview), then **Redeploy** |
+| `MissingSecret` on login | Add `AUTH_SECRET` in Vercel → Settings → Environment Variables for **Production** and **Preview**, value only (no quotes), then **Redeploy** |
+| Page still broken after setting env vars | Env vars do not apply to old deployments — always **Redeploy** after changes |
+| `gorepyo.com` shows a parking/lander page | DNS is not pointed at Vercel yet — update A/CNAME records at your registrar (see step 5) |
+| Vercel URL redirects to vercel.com login | Turn off **Deployment Protection** under Vercel → Project → Settings → Deployment Protection (or add yourself as an allowed user) |
+| Login works on `*.vercel.app` but not custom domain | Set `AUTH_URL` and `NEXT_PUBLIC_APP_URL` to the exact URL in your browser bar, then redeploy |
 | Login redirect loop | Clear cookies; verify `AUTH_SECRET` is set in Production env |
 | Empty database | Run `npm run db:push` and `npm run db:seed` against production `DATABASE_URL` |

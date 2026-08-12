@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { authConfig } from "@/lib/auth.config";
 import type { Role } from "@prisma/client";
 
 declare module "next-auth" {
@@ -30,6 +31,7 @@ declare module "@auth/core/jwt" {
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
       credentials: {
@@ -64,29 +66,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id!;
-        token.role = user.role;
-        token.companyId = user.companyId ?? null;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (!token?.id || !token?.role) {
-        return session;
-      }
-      session.user.id = token.id as string;
-      session.user.role = token.role as Role;
-      session.user.companyId = (token.companyId as string | null) ?? null;
-      return session;
-    },
-  },
-  pages: {
-    signIn: "/login",
-  },
-  session: { strategy: "jwt" },
-  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
-  trustHost: true,
 });

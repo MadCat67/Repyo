@@ -1,38 +1,29 @@
-import { auth } from "@/lib/auth";
+import NextAuth from "next-auth";
+import { authConfig } from "@/lib/auth.config";
 import { canAccessRoute, getDefaultRoute } from "@/lib/auth-utils";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/", "/login", "/signup"];
+const { auth } = NextAuth(authConfig);
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+export default auth((req) => {
+  const { pathname } = req.nextUrl;
 
-  if (PUBLIC_PATHS.includes(pathname)) {
-    return NextResponse.next();
-  }
-
-  // API routes handle their own auth and return JSON errors — never redirect them to login HTML
-  if (pathname.startsWith("/api/")) {
-    return NextResponse.next();
-  }
-
-  const session = await auth();
+  const session = req.auth;
 
   if (!session?.user?.id) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   if (!canAccessRoute(session.user.role, pathname)) {
     return NextResponse.redirect(
-      new URL(getDefaultRoute(session.user.role), request.url)
+      new URL(getDefaultRoute(session.user.role), req.url)
     );
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: [
