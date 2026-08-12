@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BrandMark } from "@/components/shared/brand-mark";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -97,8 +98,8 @@ export function PortalShell({
     <div className="flex min-h-screen bg-white">
       <aside className="hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="border-b border-slate-100 p-6">
-          <Link href="/" className="text-xl font-bold text-rose-600">
-            RepYo
+          <Link href="/">
+            <BrandMark size="sm" />
           </Link>
           <p className="mt-1 text-xs text-slate-500">{config.title}</p>
         </div>
@@ -124,8 +125,8 @@ export function PortalShell({
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <Link href="/" className="text-lg font-bold text-rose-600 lg:hidden">
-              RepYo
+            <Link href="/" className="lg:hidden">
+              <BrandMark size="sm" />
             </Link>
           </div>
           <NotificationBell />

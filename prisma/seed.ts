@@ -644,7 +644,7 @@ async function main() {
 
   console.log(`
 ╔══════════════════════════════════════════════════════════════════╗
-║                    RepYo Demo Test Data Ready                    ║
+║                   GoRepYo Demo Test Data Ready                   ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 Run:  nvm use && npm run dev

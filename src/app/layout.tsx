@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RepYo — Healthcare Rep Dispatch",
+  title: "GoRepYo — Healthcare Rep Dispatch",
   description:
     "HIPAA-compliant platform connecting healthcare providers with credentialed medical device representatives.",
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BrandMark } from "@/components/shared/brand-mark";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
@@ -50,7 +51,7 @@ export function SignupForm() {
     <div className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-rose-600">RepYo</h1>
+          <BrandMark size="lg" />
           <p className="mt-2 text-sm text-slate-600">Create your account</p>
         </div>
 
