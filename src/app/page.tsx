@@ -25,7 +25,7 @@ export default async function HomePage() {
   const portals = [
     {
       role: "Healthcare Provider",
-      desc: "Request credentialed reps, track cases live, and manage your favorite field team.",
+      desc: "Request/schedule credentialed reps with live tracking and manage your favorite field team.",
       href: "/login",
       icon: Stethoscope,
       accent: "from-rose-500 to-pink-500",
@@ -61,13 +61,13 @@ export default async function HomePage() {
     },
     {
       icon: MapPin,
-      title: "Live case tracking",
+      title: "Live request tracking",
       desc: "Follow every request from assignment through arrival with real-time status updates.",
     },
     {
       icon: Clock,
-      title: "Faster OR turnover",
-      desc: "Cut phone tag and reduce delays for cath lab, EP lab, and OR procedures.",
+      title: "More visibility",
+      desc: "Cut messy scheduling delays for faster and more visible connections.",
     },
     {
       icon: Shield,
@@ -79,7 +79,7 @@ export default async function HomePage() {
   const steps = [
     { step: "01", title: "Request a rep", desc: "Providers submit case details, urgency, and device company in seconds." },
     { step: "02", title: "Auto-assign & track", desc: "GoRepYo routes to available credentialed reps and streams live status." },
-    { step: "03", title: "Complete the case", desc: "Reps confirm arrival and case completion — full audit trail included." },
+    { step: "03", title: "Complete request", desc: "Reps confirm arrival and completion — full audit trail included." },
   ];
 
   return (
@@ -123,17 +123,13 @@ export default async function HomePage() {
             </div>
 
             <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl sm:leading-[1.1]">
-              The fastest way to get{" "}
-              <span className="bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">
-                device reps
-              </span>{" "}
-              to your procedure
+              The fastest way to manage device reps
             </h1>
 
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-600 sm:text-xl">
               GoRepYo connects hospitals and clinics with credentialed medical device
               representatives — intelligent routing, live tracking, and streamlined
-              scheduling for cath lab, EP lab, and OR.
+              scheduling for cath lab, EP lab, OR and clinics.
             </p>
 
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -170,7 +166,9 @@ export default async function HomePage() {
       <section className="border-y border-slate-100 bg-slate-50/50 py-20">
         <div className="mx-auto max-w-6xl px-6">
           <div className="mb-12 text-center">
-            <h2 className="text-3xl font-bold text-slate-900">Built for the procedural suite</h2>
+            <h2 className="text-3xl font-bold text-slate-900">
+              Built for the procedural suite, clinical support and rep management
+            </h2>
             <p className="mt-3 text-slate-600">
               Everything your team needs to coordinate reps without the chaos.
             </p>
