@@ -17,6 +17,7 @@ export function RepDashboard({ userName }: { userName: string }) {
   const [onCall, setOnCall] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [companyReps, setCompanyReps] = useState<{ id: string; name: string }[]>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -42,6 +43,23 @@ export function RepDashboard({ userName }: { userName: string }) {
     const es = connectEventSource("/api/notifications/stream", loadData);
     return () => es.close();
   }, [loadData]);
+
+  const adminRequests = requests.filter((r) => r.status === "REQUESTING");
+  const fieldRequests = requests.filter((r) =>
+    ["ACCEPTED", "EN_ROUTE", "ARRIVED"].includes(r.status)
+  );
+
+  useEffect(() => {
+    if (adminRequests.length > 0) {
+      fetchJson<{ id: string; name: string }[]>("/api/company/reps")
+        .then((data) =>
+          setCompanyReps(
+            Array.isArray(data) ? data.map((r) => ({ id: r.id, name: r.name })) : []
+          )
+        )
+        .catch(() => setCompanyReps([]));
+    }
+  }, [adminRequests.length]);
 
   async function updateStatus(newStatus: string) {
     try {
@@ -83,10 +101,21 @@ export function RepDashboard({ userName }: { userName: string }) {
     }
   }
 
-  const pending = requests.filter((r) =>
-    ["ASSIGNED", "PENDING", "ACCEPTED", "EN_ROUTE", "ARRIVED"].includes(r.status)
-  );
-  const urgent = pending.filter((r) => r.urgency === "EMERGENCY");
+  async function handleAssignRep(requestId: string, repId: string) {
+    try {
+      await fetchJson(`/api/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repId }),
+      });
+      loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to assign rep");
+    }
+  }
+
+  const pending = [...adminRequests, ...fieldRequests];
+  const urgent = pending.filter((r) => r.urgency === "ASAP");
 
   return (
     <PortalShell portal="rep" userName={userName}>
@@ -133,9 +162,29 @@ export function RepDashboard({ userName }: { userName: string }) {
         </div>
       </div>
 
+      {adminRequests.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">
+            Admin Queue (Forwarded)
+          </h2>
+          <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
+            {adminRequests.map((req) => (
+              <RequestCard
+                key={req.id}
+                request={req}
+                role="company"
+                availableReps={companyReps}
+                onAction={handleAction}
+                onAssignRep={handleAssignRep}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {urgent.length > 0 && (
         <section className="mb-6">
-          <h2 className="mb-3 text-sm font-semibold uppercase text-red-600">Urgent Requests</h2>
+          <h2 className="mb-3 text-sm font-semibold uppercase text-red-600">ASAP Requests</h2>
           <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
             {urgent.map((req) => (
               <RequestCard key={req.id} request={req} role="rep" onAction={handleAction} />
@@ -145,19 +194,21 @@ export function RepDashboard({ userName }: { userName: string }) {
       )}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">Pending Requests</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">Your Assignments</h2>
         {loading ? (
           <p className="text-slate-500">Loading...</p>
-        ) : pending.length === 0 ? (
+        ) : fieldRequests.length === 0 && adminRequests.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
             <p className="text-slate-600">No pending requests</p>
             <Button className="mt-3" variant="secondary" onClick={() => updateStatus("AVAILABLE")}>
               Go Available
             </Button>
           </div>
+        ) : fieldRequests.length === 0 ? (
+          <p className="text-slate-500">No active field assignments.</p>
         ) : (
           <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
-            {pending.map((req) => (
+            {fieldRequests.map((req) => (
               <RequestCard key={req.id} request={req} role="rep" onAction={handleAction} />
             ))}
           </div>

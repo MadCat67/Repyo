@@ -8,6 +8,7 @@ export const createRequestSchema = z.object({
   facilityPhone: z.string().optional(),
   facilityLat: z.number().optional(),
   facilityLng: z.number().optional(),
+  facilityZipCode: z.string().regex(/^\d{5}(-\d{4})?$/, "Valid 5-digit zip code required"),
   department: z.string().min(1),
   physicianName: z.string().min(1),
   patientName: z.string().min(1),
@@ -23,9 +24,7 @@ export const createRequestSchema = z.object({
 
 export const updateRequestStatusSchema = z.object({
   status: z.enum([
-    "SEARCHING",
-    "ASSIGNED",
-    "PENDING",
+    "REQUESTING",
     "ACCEPTED",
     "EN_ROUTE",
     "ARRIVED",
@@ -35,6 +34,15 @@ export const updateRequestStatusSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   note: z.string().optional(),
+});
+
+export const assignRepSchema = z.object({
+  repId: z.string().uuid(),
+});
+
+export const updateDelegationSchema = z.object({
+  repId: z.string().uuid().nullable(),
+  active: z.boolean(),
 });
 
 export const updateRepStatusSchema = z.object({
@@ -111,6 +119,9 @@ export const signupSchema = z
     companyId: z.string().uuid().optional(),
     facilityName: z.string().optional(),
     department: z.string().optional(),
+    zipCode: z.string().optional(),
+    zipCodeStart: z.string().optional(),
+    zipCodeEnd: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (["REP", "COMPANY_ADMIN"].includes(data.role) && !data.companyId) {
@@ -119,5 +130,28 @@ export const signupSchema = z
         message: "Device company is required for this role",
         path: ["companyId"],
       });
+    }
+    if (data.role === "PROVIDER" && !data.zipCode?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Zip code is required for providers",
+        path: ["zipCode"],
+      });
+    }
+    if (data.role === "COMPANY_ADMIN") {
+      if (!data.zipCodeStart?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Starting zip code is required for company admins",
+          path: ["zipCodeStart"],
+        });
+      }
+      if (!data.zipCodeEnd?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Ending zip code is required for company admins",
+          path: ["zipCodeEnd"],
+        });
+      }
     }
   });

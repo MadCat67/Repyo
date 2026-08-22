@@ -1,7 +1,6 @@
 import {
   CredentialStatus,
   RepStatus,
-  RequestStatus,
   type RepProfile,
   type Territory,
   type User,
@@ -126,41 +125,55 @@ export async function findEligibleReps(
   return eligible.sort((a, b) => a.distanceMiles - b.distanceMiles);
 }
 
+/** Assign a rep to a request (admin or delegated rep action). */
 export async function assignRepToRequest(
   requestId: string,
+  repId: string,
   criteria: RoutingCriteria
-): Promise<{ assigned: boolean; repId?: string; repName?: string }> {
-  const eligible = await findEligibleReps(criteria);
+): Promise<{ assigned: boolean; repName?: string }> {
+  const rep = await db.user.findFirst({
+    where: { id: repId, role: "REP", companyId: criteria.companyId },
+    include: { repProfile: true },
+  });
 
-  if (eligible.length === 0) {
+  if (!rep?.repProfile) {
     return { assigned: false };
   }
 
-  const bestRep = eligible[0];
+  let etaMinutes: number | null = null;
+  let repLat = rep.repProfile.lat;
+  let repLng = rep.repProfile.lng;
+
+  if (
+    repLat != null &&
+    repLng != null &&
+    criteria.facilityLat != null &&
+    criteria.facilityLng != null
+  ) {
+    const dist = distanceMiles(
+      repLat,
+      repLng,
+      criteria.facilityLat,
+      criteria.facilityLng
+    );
+    etaMinutes = estimateEtaMinutes(dist);
+  }
 
   await db.$transaction([
     db.serviceRequest.update({
       where: { id: requestId },
       data: {
-        assignedRepId: bestRep.userId,
-        status: RequestStatus.ASSIGNED,
-        etaMinutes: bestRep.etaMinutes,
-        repLat: bestRep.lat,
-        repLng: bestRep.lng,
-      },
-    }),
-    db.requestStatusLog.create({
-      data: {
-        requestId,
-        status: RequestStatus.ASSIGNED,
-        note: `Assigned to ${bestRep.name}`,
+        assignedRepId: repId,
+        etaMinutes,
+        repLat,
+        repLng,
       },
     }),
     db.notification.create({
       data: {
-        userId: bestRep.userId,
-        title: "New Rep Request",
-        body: `You have a new request at ${criteria.facilityName}`,
+        userId: repId,
+        title: "Rep Request Assigned",
+        body: `You have been assigned a request at ${criteria.facilityName}`,
         type: "REQUEST_ASSIGNED",
         data: { requestId },
       },
@@ -168,16 +181,12 @@ export async function assignRepToRequest(
   ]);
 
   realtimeBus.emit("request:updated", { requestId });
-  realtimeBus.emit(`user:${bestRep.userId}`, {
+  realtimeBus.emit(`user:${repId}`, {
     type: "REQUEST_ASSIGNED",
     requestId,
   });
 
-  return {
-    assigned: true,
-    repId: bestRep.userId,
-    repName: bestRep.name,
-  };
+  return { assigned: true, repName: rep.name };
 }
 
 /** In-process event bus for SSE. Production should use Redis pub/sub. */

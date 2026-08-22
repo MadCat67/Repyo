@@ -149,6 +149,7 @@ async function main() {
           facilityPhone: "(602) 555-0100",
           department: "EP Lab",
           defaultPhysician: "Dr. Sarah Chen",
+          zipCode: "85044",
         },
       },
     },
@@ -164,6 +165,7 @@ async function main() {
         facilityPhone: "(602) 555-0100",
         department: "EP Lab",
         defaultPhysician: "Dr. Sarah Chen",
+        zipCode: "85044",
       },
     });
   }
@@ -310,14 +312,26 @@ async function main() {
 
   await db.user.upsert({
     where: { email: "admin@demo.com" },
-    update: { passwordHash, companyId: medtronic.id },
+    update: {
+      passwordHash,
+      companyId: medtronic.id,
+      zipCodeStart: "85040",
+      zipCodeEnd: "85050",
+    },
     create: {
       email: "admin@demo.com",
       passwordHash,
       name: "Medtronic Admin",
       role: "COMPANY_ADMIN",
       companyId: medtronic.id,
+      zipCodeStart: "85040",
+      zipCodeEnd: "85050",
     },
+  });
+
+  const medtronicAdmin = await db.user.findUnique({
+    where: { email: "admin@demo.com" },
+    select: { id: true },
   });
 
   await db.user.upsert({
@@ -353,7 +367,9 @@ async function main() {
     data: {
       providerId: string;
       companyId: string;
+      assignedAdminId?: string;
       assignedRepId?: string;
+      facilityZipCode?: string;
       facilityName: string;
       facilityAddr: string;
       facilityLat?: number;
@@ -364,7 +380,7 @@ async function main() {
       patientDOB: Date;
       procedureType: string;
       product?: string;
-      urgency: "EMERGENCY" | "SAME_DAY" | "SCHEDULED";
+      urgency: "ASAP" | "SAME_DAY" | "SCHEDULED";
       scheduledAt: Date;
       status: RequestStatus;
       notes?: string;
@@ -378,7 +394,9 @@ async function main() {
       data: {
         providerId: data.providerId,
         companyId: data.companyId,
+        assignedAdminId: data.assignedAdminId,
         assignedRepId: data.assignedRepId,
+        facilityZipCode: data.facilityZipCode,
         facilityName: data.facilityName,
         facilityAddr: data.facilityAddr,
         facilityPhone: "(602) 555-0100",
@@ -412,7 +430,9 @@ async function main() {
     {
       providerId: provider.id,
       companyId: medtronic.id,
+      assignedAdminId: medtronicAdmin?.id,
       assignedRepId: repMike.id,
+      facilityZipCode: "85044",
       facilityName: valleyFacility.name,
       facilityAddr: valleyFacility.address,
       facilityLat: valleyFacility.lat ?? undefined,
@@ -423,14 +443,14 @@ async function main() {
       patientDOB: new Date("1958-03-12"),
       procedureType: "ICD",
       product: "ICD",
-      urgency: "EMERGENCY",
+      urgency: "ASAP",
       scheduledAt: hoursFromNow(1),
-      status: "ASSIGNED",
+      status: "ACCEPTED",
       notes: "STAT — device advisory case, need rep ASAP",
     },
     [
-      { status: "SEARCHING", note: "Request submitted", minutesAgo: 8 },
-      { status: "ASSIGNED", note: `Assigned to ${repMike.name}`, minutesAgo: 6 },
+      { status: "REQUESTING", note: "Request submitted", minutesAgo: 8 },
+      { status: "ACCEPTED", note: `Accepted and assigned to ${repMike.name}`, minutesAgo: 6 },
     ]
   );
 
@@ -439,7 +459,9 @@ async function main() {
     {
       providerId: provider.id,
       companyId: medtronic.id,
+      assignedAdminId: medtronicAdmin?.id,
       assignedRepId: repMike.id,
+      facilityZipCode: "85044",
       facilityName: valleyFacility.name,
       facilityAddr: valleyFacility.address,
       facilityLat: valleyFacility.lat ?? undefined,
@@ -456,18 +478,19 @@ async function main() {
       notes: "Dual-chamber PPM upgrade",
     },
     [
-      { status: "SEARCHING", note: "Request submitted", minutesAgo: 45 },
-      { status: "ASSIGNED", note: `Assigned to ${repMike.name}`, minutesAgo: 40 },
-      { status: "ACCEPTED", note: "Rep accepted request", minutesAgo: 35 },
+      { status: "REQUESTING", note: "Request submitted", minutesAgo: 45 },
+      { status: "ACCEPTED", note: `Assigned to ${repMike.name}`, minutesAgo: 35 },
     ]
   );
 
-  // 3. En route — with ETA
+  // 3. En route
   const enRoute = await createRequest(
     {
       providerId: provider.id,
       companyId: medtronic.id,
+      assignedAdminId: medtronicAdmin?.id,
       assignedRepId: repMike.id,
+      facilityZipCode: "85044",
       facilityName: valleyFacility.name,
       facilityAddr: valleyFacility.address,
       facilityLat: valleyFacility.lat ?? undefined,
@@ -487,9 +510,8 @@ async function main() {
       notes: "CRT-D implant, bring backup leads",
     },
     [
-      { status: "SEARCHING", note: "Request submitted", minutesAgo: 120 },
-      { status: "ASSIGNED", note: `Assigned to ${repMike.name}`, minutesAgo: 115 },
-      { status: "ACCEPTED", note: "Rep accepted", minutesAgo: 110 },
+      { status: "REQUESTING", note: "Request submitted", minutesAgo: 120 },
+      { status: "ACCEPTED", note: `Assigned to ${repMike.name}`, minutesAgo: 110 },
       { status: "EN_ROUTE", note: "Rep en route", minutesAgo: 20 },
     ]
   );
@@ -499,7 +521,9 @@ async function main() {
     {
       providerId: provider.id,
       companyId: medtronic.id,
+      assignedAdminId: medtronicAdmin?.id,
       assignedRepId: repMike.id,
+      facilityZipCode: "85044",
       facilityName: valleyFacility.name,
       facilityAddr: valleyFacility.address,
       facilityLat: valleyFacility.lat ?? undefined,
@@ -516,9 +540,8 @@ async function main() {
       notes: "Loop recorder implant",
     },
     [
-      { status: "SEARCHING", note: "Request submitted", minutesAgo: 180 },
-      { status: "ASSIGNED", note: `Assigned to ${repMike.name}`, minutesAgo: 175 },
-      { status: "ACCEPTED", note: "Rep accepted", minutesAgo: 170 },
+      { status: "REQUESTING", note: "Request submitted", minutesAgo: 180 },
+      { status: "ACCEPTED", note: `Assigned to ${repMike.name}`, minutesAgo: 170 },
       { status: "EN_ROUTE", note: "Rep en route", minutesAgo: 60 },
       { status: "ARRIVED", note: "Rep arrived on site", minutesAgo: 10 },
     ]
@@ -529,7 +552,9 @@ async function main() {
     {
       providerId: provider.id,
       companyId: medtronic.id,
+      assignedAdminId: medtronicAdmin?.id,
       assignedRepId: repMike.id,
+      facilityZipCode: "85044",
       facilityName: valleyFacility.name,
       facilityAddr: valleyFacility.address,
       department: "EP Lab",
@@ -544,9 +569,8 @@ async function main() {
       notes: "Successful ICD generator change",
     },
     [
-      { status: "SEARCHING", note: "Request submitted", minutesAgo: 3000 },
-      { status: "ASSIGNED", note: `Assigned to ${repMike.name}`, minutesAgo: 2980 },
-      { status: "ACCEPTED", note: "Rep accepted", minutesAgo: 2970 },
+      { status: "REQUESTING", note: "Request submitted", minutesAgo: 3000 },
+      { status: "ACCEPTED", note: `Assigned to ${repMike.name}`, minutesAgo: 2970 },
       { status: "EN_ROUTE", note: "Rep en route", minutesAgo: 2900 },
       { status: "ARRIVED", note: "Rep arrived", minutesAgo: 2880 },
       { status: "COMPLETED", note: "Case completed", minutesAgo: 2700 },
@@ -558,7 +582,9 @@ async function main() {
     {
       providerId: provider.id,
       companyId: medtronic.id,
+      assignedAdminId: medtronicAdmin?.id,
       assignedRepId: repMike.id,
+      facilityZipCode: "85044",
       facilityName: valleyFacility.name,
       facilityAddr: valleyFacility.address,
       department: "EP Lab",
@@ -572,7 +598,7 @@ async function main() {
       notes: "Case cancelled — patient rescheduled",
     },
     [
-      { status: "SEARCHING", note: "Request submitted", minutesAgo: 500 },
+      { status: "REQUESTING", note: "Request submitted", minutesAgo: 500 },
       { status: "CANCELLED", note: "Cancelled by provider", minutesAgo: 480 },
     ]
   );
@@ -595,12 +621,11 @@ async function main() {
       product: "Watchman",
       urgency: "SCHEDULED",
       scheduledAt: daysFromNow(1, 11),
-      status: "ASSIGNED",
+      status: "REQUESTING",
       notes: "Watchman LAA closure",
     },
     [
-      { status: "SEARCHING", note: "Request submitted", minutesAgo: 30 },
-      { status: "ASSIGNED", note: `Assigned to ${repTom.name}`, minutesAgo: 25 },
+      { status: "REQUESTING", note: "Request submitted", minutesAgo: 30 },
     ]
   );
 
@@ -610,7 +635,7 @@ async function main() {
       {
         userId: repMike.id,
         title: "New Rep Request",
-        body: `Emergency ICD case at ${valleyFacility.name}`,
+        body: `ASAP ICD request at ${valleyFacility.name}`,
         type: "REQUEST_ASSIGNED",
         data: { requestId: emergency.id },
         read: false,
@@ -665,10 +690,10 @@ ACCOUNTS
 
 SEEDED CASES (sign in as provider@demo.com)
 ──────────────────────────────────────────────────────────────────
-  1. EMERGENCY / ICD      → ASSIGNED    Accept as rep@demo.com
+  1. ASAP / ICD           → ACCEPTED    Mark En Route as rep@demo.com
   2. SAME DAY / PPM       → ACCEPTED    Mark En Route as rep
   3. SCHEDULED / CRT-D    → EN ROUTE    Track ETA on provider dashboard
-  4. SCHEDULED / Loop     → ARRIVED     Complete Case as rep
+  4. SCHEDULED / Loop     → ARRIVED     Complete Request as rep
   5. SCHEDULED / ICD      → COMPLETED   View in Requests → Completed tab
   6. SCHEDULED / Extract  → CANCELLED   View in Requests → Cancelled tab
 
@@ -684,7 +709,7 @@ TEST WALKTHROUGH
 
   B. Rep (rep@demo.com)
      • Dashboard → toggle Available / On Call
-     • Accept the EMERGENCY case → Mark En Route → Arrived → Complete
+     • Accept the ASAP request → Mark En Route → Arrived → Complete
      • Schedule → see today's grouped cases
      • Territory → edit coverage & products → Save
 

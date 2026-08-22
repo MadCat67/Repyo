@@ -4,13 +4,30 @@ import { createRepSchema } from "@/lib/validations";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 
+import { getDelegatedAdminIdsForRep } from "@/lib/admin-matching";
+
 export async function GET() {
   const session = await auth();
-  if (!session?.user || session.user.role !== "COMPANY_ADMIN") {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const companyId = session.user.companyId;
+  let companyId = session.user.companyId;
+
+  if (session.user.role === "REP") {
+    const delegatedAdminIds = await getDelegatedAdminIdsForRep(session.user.id);
+    if (delegatedAdminIds.length === 0) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const admin = await db.user.findUnique({
+      where: { id: delegatedAdminIds[0] },
+      select: { companyId: true },
+    });
+    companyId = admin?.companyId ?? null;
+  } else if (session.user.role !== "COMPANY_ADMIN") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   if (!companyId) {
     return NextResponse.json({ error: "No company assigned" }, { status: 400 });
   }

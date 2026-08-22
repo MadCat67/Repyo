@@ -5,8 +5,7 @@ import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 
 const PIPELINE = [
-  "SEARCHING",
-  "ASSIGNED",
+  "REQUESTING",
   "ACCEPTED",
   "EN_ROUTE",
   "ARRIVED",
@@ -25,7 +24,7 @@ export function StatusPipeline({ currentStatus }: { currentStatus: string }) {
   return (
     <div className="flex items-center gap-1 overflow-x-auto py-2">
       {PIPELINE.map((status, idx) => {
-        const done = idx <= currentIdx;
+        const done = currentIdx >= 0 && idx <= currentIdx;
         const active = status === currentStatus;
 
         return (
@@ -58,7 +57,7 @@ export function StatusPipeline({ currentStatus }: { currentStatus: string }) {
               <div
                 className={cn(
                   "mx-1 h-0.5 w-6 sm:w-10",
-                  idx < currentIdx ? "bg-rose-400" : "bg-slate-200"
+                  done && idx < currentIdx ? "bg-rose-400" : "bg-slate-200"
                 )}
               />
             )}

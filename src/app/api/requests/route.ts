@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
+import { findMatchingAdmin } from "@/lib/admin-matching";
 import { db } from "@/lib/db";
 import { encryptPHI, encryptDate, decryptPHI, decryptDate } from "@/lib/encryption";
-import { assignRepToRequest } from "@/lib/routing-engine";
+import { getDelegatedAdminIdsForRep } from "@/lib/admin-matching";
 import { createRequestSchema } from "@/lib/validations";
 import { NextResponse } from "next/server";
 
@@ -16,20 +17,38 @@ export async function GET() {
       return NextResponse.json({ error: "Company not found" }, { status: 403 });
     }
 
-    const where =
-      session.user.role === "PROVIDER"
-        ? { providerId: session.user.id }
-        : session.user.role === "REP"
-          ? { assignedRepId: session.user.id }
-          : session.user.role === "COMPANY_ADMIN"
-            ? { companyId: session.user.companyId ?? undefined }
-            : {};
+    let where: Record<string, unknown> = {};
+
+    if (session.user.role === "PROVIDER") {
+      where = { providerId: session.user.id };
+    } else if (session.user.role === "REP") {
+      const delegatedAdminIds = await getDelegatedAdminIdsForRep(session.user.id);
+      where = {
+        OR: [
+          { assignedRepId: session.user.id },
+          ...(delegatedAdminIds.length > 0
+            ? [
+                {
+                  assignedAdminId: { in: delegatedAdminIds },
+                  status: "REQUESTING",
+                },
+              ]
+            : []),
+        ],
+      };
+    } else if (session.user.role === "COMPANY_ADMIN") {
+      where = {
+        companyId: session.user.companyId ?? undefined,
+        assignedAdminId: session.user.id,
+      };
+    }
 
     const requests = await db.serviceRequest.findMany({
       where,
       include: {
         provider: { select: { id: true, name: true, phone: true } },
         assignedRep: { select: { id: true, name: true, phone: true } },
+        assignedAdmin: { select: { id: true, name: true } },
         company: { select: { id: true, name: true } },
         statusLogs: { orderBy: { createdAt: "desc" }, take: 5 },
       },
@@ -85,15 +104,24 @@ export async function POST(request: Request) {
         ? new Date(`${data.patientDOB}T00:00:00.000Z`)
         : new Date(data.patientDOB);
 
+    const providerProfile = await db.providerProfile.findUnique({
+      where: { userId: session.user.id },
+    });
+
+    const zipCode = data.facilityZipCode.slice(0, 5);
+    const matchedAdmin = await findMatchingAdmin(data.companyId, zipCode);
+
     const serviceRequest = await db.serviceRequest.create({
       data: {
         providerId: session.user.id,
         companyId: data.companyId,
+        assignedAdminId: matchedAdmin?.id ?? null,
         facilityName: data.facilityName,
         facilityAddr: data.facilityAddr,
         facilityPhone: data.facilityPhone,
         facilityLat: data.facilityLat,
         facilityLng: data.facilityLng,
+        facilityZipCode: zipCode,
         department: data.department,
         physicianName: data.physicianName,
         patientNameEnc: encryptPHI(data.patientName),
@@ -104,28 +132,51 @@ export async function POST(request: Request) {
         urgency: data.urgency,
         scheduledAt: new Date(data.scheduledAt),
         notes: data.notes,
+        status: "REQUESTING",
       },
     });
 
     await db.requestStatusLog.create({
       data: {
         requestId: serviceRequest.id,
-        status: "SEARCHING",
-        note: "Request submitted",
+        status: "REQUESTING",
+        note: matchedAdmin
+          ? `Routed to admin ${matchedAdmin.name} for zip ${zipCode}`
+          : "Request submitted — awaiting admin assignment",
       },
     });
 
-    const assignment = await assignRepToRequest(serviceRequest.id, {
-      companyId: data.companyId,
-      facilityName: data.facilityName,
-      facilityLat: data.facilityLat,
-      facilityLng: data.facilityLng,
-      product: data.product,
-      preferredRepId: data.preferredRepId,
-    });
+    if (providerProfile && !providerProfile.zipCode) {
+      await db.providerProfile.update({
+        where: { userId: session.user.id },
+        data: { zipCode },
+      });
+    }
+
+    const notifyUserId =
+      matchedAdmin?.delegationActive && matchedAdmin.delegatedRepId
+        ? matchedAdmin.delegatedRepId
+        : matchedAdmin?.id;
+
+    if (notifyUserId) {
+      await db.notification.create({
+        data: {
+          userId: notifyUserId,
+          title: "New Provider Request",
+          body: `New request at ${data.facilityName} (zip ${zipCode})`,
+          type: "REQUEST_ASSIGNED",
+          data: { requestId: serviceRequest.id },
+        },
+      });
+    }
 
     return NextResponse.json(
-      { request: serviceRequest, assignment },
+      {
+        request: serviceRequest,
+        matchedAdmin: matchedAdmin
+          ? { id: matchedAdmin.id, name: matchedAdmin.name }
+          : null,
+      },
       { status: 201 }
     );
   } catch (error) {

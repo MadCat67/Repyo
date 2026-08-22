@@ -17,6 +17,9 @@ export async function signupAction(formData: FormData) {
     companyId: formData.get("companyId") || undefined,
     facilityName: formData.get("facilityName") || undefined,
     department: formData.get("department") || undefined,
+    zipCode: formData.get("zipCode") || undefined,
+    zipCodeStart: formData.get("zipCodeStart") || undefined,
+    zipCodeEnd: formData.get("zipCodeEnd") || undefined,
   });
 
   if (!parsed.success) {
@@ -24,7 +27,7 @@ export async function signupAction(formData: FormData) {
     return { error: firstIssue };
   }
 
-  const { name, email, password, role, companyId, facilityName, department } =
+  const { name, email, password, role, companyId, facilityName, department, zipCode, zipCodeStart, zipCodeEnd } =
     parsed.data;
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -54,11 +57,16 @@ export async function signupAction(formData: FormData) {
       passwordHash,
       role,
       companyId: companyId ?? null,
+      ...(role === "COMPANY_ADMIN" && {
+        zipCodeStart: zipCodeStart?.trim().slice(0, 5) ?? null,
+        zipCodeEnd: zipCodeEnd?.trim().slice(0, 5) ?? null,
+      }),
       ...(role === "PROVIDER" && {
         providerInfo: {
           create: {
             facilityName: facilityName?.trim() || null,
             department: department?.trim() || null,
+            zipCode: zipCode?.trim().slice(0, 5) ?? null,
           },
         },
       }),

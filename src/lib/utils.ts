@@ -47,13 +47,11 @@ export const PROCEDURE_TYPES = [
 ] as const;
 
 export const REQUEST_STATUS_LABELS: Record<string, string> = {
-  SEARCHING: "Searching",
-  ASSIGNED: "Assigned",
-  PENDING: "Pending",
+  REQUESTING: "Requesting",
   ACCEPTED: "Accepted",
   EN_ROUTE: "En Route",
   ARRIVED: "Arrived",
-  COMPLETED: "Complete",
+  COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
 

@@ -15,7 +15,7 @@ enum Role {
 }
 
 enum RequestUrgency {
-  EMERGENCY
+  ASAP
   SAME_DAY
   SCHEDULED
 }
@@ -26,9 +26,7 @@ enum RequestType {
 }
 
 enum RequestStatus {
-  SEARCHING
-  ASSIGNED
-  PENDING
+  REQUESTING
   ACCEPTED
   EN_ROUTE
   ARRIVED
@@ -51,21 +49,28 @@ enum CredentialStatus {
 }
 
 model User {
-  id            String           @id @default(uuid())
-  role          Role
-  email         String           @unique
-  passwordHash  String
-  name          String
-  phone         String?
-  companyId     String?
-  company       Company?         @relation(fields: [companyId], references: [id])
-  repProfile    RepProfile?
-  providerInfo  ProviderProfile?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id               String           @id @default(uuid())
+  role             Role
+  email            String           @unique
+  passwordHash     String
+  name             String
+  phone            String?
+  companyId        String?
+  zipCodeStart     String?
+  zipCodeEnd       String?
+  delegatedRepId   String?
+  delegationActive Boolean          @default(false)
+  company          Company?         @relation(fields: [companyId], references: [id])
+  delegatedRep     User?            @relation("AdminDelegation", fields: [delegatedRepId], references: [id])
+  delegatingAdmins User[]           @relation("AdminDelegation")
+  repProfile       RepProfile?
+  providerInfo     ProviderProfile?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   providerRequests ServiceRequest[] @relation("ProviderRequests")
   assignedRequests ServiceRequest[] @relation("AssignedRepRequests")
+  adminRequests    ServiceRequest[] @relation("AdminRequests")
   favoriteReps     FavoriteRep[]    @relation("ProviderFavorites")
   favoritedBy      FavoriteRep[]    @relation("RepFavorites")
   notifications    Notification[]
@@ -110,6 +115,7 @@ model ProviderProfile {
   facilityPhone    String?
   department       String?
   defaultPhysician String?
+  zipCode          String?
 }
 
 model RepProfile {
@@ -150,12 +156,14 @@ model ServiceRequest {
   id              String         @id @default(uuid())
   providerId      String
   companyId       String
+  assignedAdminId String?
   assignedRepId   String?
   facilityName    String
   facilityAddr    String
   facilityPhone   String?
   facilityLat     Float?
   facilityLng     Float?
+  facilityZipCode String?
   department      String
   physicianName   String
   patientNameEnc  String
@@ -165,7 +173,7 @@ model ServiceRequest {
   product         String?
   urgency         RequestUrgency
   scheduledAt     DateTime
-  status          RequestStatus  @default(SEARCHING)
+  status          RequestStatus  @default(REQUESTING)
   notes           String?
   repLat          Float?
   repLng          Float?
@@ -173,12 +181,14 @@ model ServiceRequest {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  provider    User     @relation("ProviderRequests", fields: [providerId], references: [id])
-  company     Company  @relation(fields: [companyId], references: [id])
-  assignedRep User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
-  statusLogs  RequestStatusLog[]
+  provider      User     @relation("ProviderRequests", fields: [providerId], references: [id])
+  assignedAdmin User?    @relation("AdminRequests", fields: [assignedAdminId], references: [id])
+  company       Company  @relation(fields: [companyId], references: [id])
+  assignedRep   User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
+  statusLogs    RequestStatusLog[]
 
   @@index([providerId])
+  @@index([assignedAdminId])
   @@index([assignedRepId])
   @@index([status])
   @@index([companyId])

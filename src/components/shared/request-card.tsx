@@ -11,6 +11,7 @@ export interface RequestData {
   id: string;
   facilityName: string;
   facilityAddr?: string;
+  facilityZipCode?: string | null;
   procedureType: string;
   urgency: string;
   status: string;
@@ -20,27 +21,40 @@ export interface RequestData {
   notes?: string | null;
   etaMinutes?: number | null;
   assignedRep?: { id: string; name: string; phone: string | null } | null;
+  assignedAdmin?: { id: string; name: string } | null;
   provider?: { id: string; name: string; phone: string | null } | null;
   company?: { name: string } | null;
   statusLogs?: { status: string; createdAt: string; note?: string | null }[];
 }
 
+interface RepOption {
+  id: string;
+  name: string;
+}
+
 export function RequestCard({
   request,
   onAction,
+  onAssignRep,
   onFavorite,
   isFavorite,
   role,
   showPipeline = false,
+  availableReps = [],
 }: {
   request: RequestData;
   onAction?: (action: string, requestId: string) => void;
+  onAssignRep?: (requestId: string, repId: string) => void;
   onFavorite?: (repId: string) => void;
   isFavorite?: boolean;
   role: "provider" | "rep" | "company";
   showPipeline?: boolean;
+  availableReps?: RepOption[];
 }) {
   const [expanded, setExpanded] = useState(showPipeline);
+  const [selectedRepId, setSelectedRepId] = useState("");
+
+  const canManageAsAdmin = role === "company";
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -52,6 +66,9 @@ export function RequestCard({
               <UrgencyBadge urgency={request.urgency} />
             </div>
             <p className="mt-1 text-sm text-slate-600">{request.procedureType}</p>
+            {request.facilityZipCode && (
+              <p className="text-xs text-slate-500">Zip {request.facilityZipCode}</p>
+            )}
             {role === "company" && request.provider && (
               <p className="text-xs text-slate-500">
                 Provider: {request.provider.name}
@@ -81,9 +98,9 @@ export function RequestCard({
           </div>
         )}
 
-        {!request.assignedRep && role === "company" && request.status === "SEARCHING" && (
+        {canManageAsAdmin && request.status === "REQUESTING" && (
           <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Awaiting rep assignment
+            New request — accept and assign a rep
           </div>
         )}
 
@@ -128,22 +145,50 @@ export function RequestCard({
           </Button>
         )}
 
-        {role === "rep" && request.status === "ASSIGNED" && onAction && (
-          <>
-            <Button size="sm" onClick={() => onAction("ACCEPTED", request.id)}>
-              Accept
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => onAction("CANCELLED", request.id)}>
-              Decline
-            </Button>
-          </>
-        )}
-
-        {role === "rep" && request.status === "ACCEPTED" && onAction && (
-          <Button size="sm" onClick={() => onAction("EN_ROUTE", request.id)}>
-            Mark En Route
+        {canManageAsAdmin && request.status === "REQUESTING" && onAction && (
+          <Button size="sm" onClick={() => onAction("ACCEPTED", request.id)}>
+            Accept
           </Button>
         )}
+
+        {canManageAsAdmin &&
+          ["REQUESTING", "ACCEPTED"].includes(request.status) &&
+          onAssignRep &&
+          availableReps.length > 0 && (
+            <>
+              <select
+                value={selectedRepId}
+                onChange={(e) => setSelectedRepId(e.target.value)}
+                className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+              >
+                <option value="">Assign rep...</option>
+                {availableReps.map((rep) => (
+                  <option key={rep.id} value={rep.id}>
+                    {rep.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!selectedRepId}
+                onClick={() => {
+                  if (selectedRepId) onAssignRep(request.id, selectedRepId);
+                }}
+              >
+                Assign
+              </Button>
+            </>
+          )}
+
+        {role === "rep" &&
+          request.assignedRep &&
+          request.status === "ACCEPTED" &&
+          onAction && (
+            <Button size="sm" onClick={() => onAction("EN_ROUTE", request.id)}>
+              Mark En Route
+            </Button>
+          )}
 
         {role === "rep" && request.status === "EN_ROUTE" && onAction && (
           <Button size="sm" onClick={() => onAction("ARRIVED", request.id)}>
@@ -153,7 +198,7 @@ export function RequestCard({
 
         {role === "rep" && request.status === "ARRIVED" && onAction && (
           <Button size="sm" onClick={() => onAction("COMPLETED", request.id)}>
-            Complete Case
+            Complete Request
           </Button>
         )}
 

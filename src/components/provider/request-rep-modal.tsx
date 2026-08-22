@@ -123,6 +123,7 @@ export function RequestRepModal({
       facilityName: form.get("facilityName"),
       facilityAddr: form.get("facilityAddr"),
       facilityPhone: form.get("facilityPhone") || undefined,
+      facilityZipCode: form.get("facilityZipCode"),
       facilityLat: defaultFacility?.lat,
       facilityLng: defaultFacility?.lng,
       department: form.get("department"),
@@ -200,6 +201,15 @@ export function RequestRepModal({
               defaultValue={defaultFacility?.address}
               required
             />
+            <Input
+              label="Zip Code"
+              name="facilityZipCode"
+              defaultValue={defaultFacility?.zip}
+              required
+              placeholder="85044"
+              pattern="\d{5}"
+              maxLength={5}
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
                 label="Department"
@@ -275,7 +285,7 @@ export function RequestRepModal({
               label="Urgency"
               name="urgency"
               options={[
-                { value: "EMERGENCY", label: "Emergency" },
+                { value: "ASAP", label: "ASAP" },
                 { value: "SAME_DAY", label: "Same Day" },
                 { value: "SCHEDULED", label: "Scheduled" },
               ]}

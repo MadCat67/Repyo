@@ -99,7 +99,36 @@ export function SignupForm() {
                 autoComplete="organization"
               />
               <Input label="Department (optional)" name="department" />
+              <Input
+                label="Zip Code"
+                name="zipCode"
+                required
+                placeholder="85044"
+                pattern="\d{5}"
+                maxLength={5}
+              />
             </>
+          )}
+
+          {role === "COMPANY_ADMIN" && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Zip Range Start"
+                name="zipCodeStart"
+                required
+                placeholder="85040"
+                pattern="\d{5}"
+                maxLength={5}
+              />
+              <Input
+                label="Zip Range End"
+                name="zipCodeEnd"
+                required
+                placeholder="85050"
+                pattern="\d{5}"
+                maxLength={5}
+              />
+            </div>
           )}
 
           {needsCompany && (

@@ -22,6 +22,7 @@ export default async function ProviderPage() {
         phone: profile?.facilityPhone ?? undefined,
         department: profile?.department ?? undefined,
         physician: profile?.defaultPhysician ?? undefined,
+        zip: profile?.zipCode ?? undefined,
       }}
     />
   );

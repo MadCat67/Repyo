@@ -31,7 +31,7 @@ export async function GET() {
 
   const responseTimes: number[] = [];
   for (const req of completed) {
-    const assigned = req.statusLogs.find((l) => l.status === "ASSIGNED");
+    const assigned = req.statusLogs.find((l) => l.status === "REQUESTING");
     const accepted = req.statusLogs.find((l) => l.status === "ACCEPTED");
     if (assigned && accepted) {
       responseTimes.push(

@@ -28,6 +28,15 @@ const REQUEST_TABS = ["all", "active", "completed", "cancelled"] as const;
 
 export function CompanyRequestsPage({ userName }: { userName: string }) {
   const [requests, setRequests] = useState<RequestData[]>([]);
+  const [reps, setReps] = useState<{ id: string; name: string }[]>([]);
+  const [delegation, setDelegation] = useState<{
+    delegationActive: boolean;
+    delegatedRep: { id: string; name: string } | null;
+    zipCodeStart: string | null;
+    zipCodeEnd: string | null;
+    reps: { id: string; name: string }[];
+  } | null>(null);
+  const [delegateRepId, setDelegateRepId] = useState("");
   const [tab, setTab] = useState<(typeof REQUEST_TABS)[number]>("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -36,8 +45,25 @@ export function CompanyRequestsPage({ userName }: { userName: string }) {
     setLoading(true);
     setError("");
     try {
-      const data = await fetchJson<RequestData[]>("/api/requests");
+      const [data, delegationData, repsData] = await Promise.all([
+        fetchJson<RequestData[]>("/api/requests"),
+        fetchJson<{
+          delegationActive: boolean;
+          delegatedRep: { id: string; name: string } | null;
+          zipCodeStart: string | null;
+          zipCodeEnd: string | null;
+          reps: { id: string; name: string }[];
+        }>("/api/company/delegation"),
+        fetchJson<{ id: string; name: string }[]>("/api/company/reps"),
+      ]);
       setRequests(Array.isArray(data) ? data : []);
+      setDelegation(delegationData);
+      setReps(
+        Array.isArray(repsData)
+          ? repsData.map((r) => ({ id: r.id, name: r.name }))
+          : delegationData.reps ?? []
+      );
+      setDelegateRepId(delegationData.delegatedRep?.id ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load requests");
       setRequests([]);
@@ -52,6 +78,48 @@ export function CompanyRequestsPage({ userName }: { userName: string }) {
     return () => es.close();
   }, [load]);
 
+  async function handleAction(action: string, requestId: string) {
+    try {
+      await fetchJson(`/api/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: action }),
+      });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    }
+  }
+
+  async function handleAssignRep(requestId: string, repId: string) {
+    try {
+      await fetchJson(`/api/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repId }),
+      });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to assign rep");
+    }
+  }
+
+  async function toggleDelegation(active: boolean) {
+    try {
+      await fetchJson("/api/company/delegation", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          active,
+          repId: active ? delegateRepId : null,
+        }),
+      });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update delegation");
+    }
+  }
+
   const filtered = requests.filter((r) => {
     if (tab === "active") return !["COMPLETED", "CANCELLED"].includes(r.status);
     if (tab === "completed") return r.status === "COMPLETED";
@@ -63,8 +131,52 @@ export function CompanyRequestsPage({ userName }: { userName: string }) {
     <PortalShell portal="company" userName={userName}>
       <h1 className="text-2xl font-bold text-slate-900">Provider Requests</h1>
       <p className="mt-1 text-sm text-slate-600">
-        Cases submitted by healthcare providers for your reps
+        Requests routed to your zip coverage
+        {delegation?.zipCodeStart && delegation?.zipCodeEnd
+          ? ` (${delegation.zipCodeStart}–${delegation.zipCodeEnd})`
+          : ""}
       </p>
+
+      {delegation && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-slate-900">Forward requests to a rep</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Temporarily let a rep accept and assign requests on your behalf.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <select
+              value={delegateRepId}
+              onChange={(e) => setDelegateRepId(e.target.value)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option value="">Select rep...</option>
+              {reps.map((rep) => (
+                <option key={rep.id} value={rep.id}>
+                  {rep.name}
+                </option>
+              ))}
+            </select>
+            {delegation.delegationActive ? (
+              <Button size="sm" variant="outline" onClick={() => toggleDelegation(false)}>
+                Stop forwarding
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                disabled={!delegateRepId}
+                onClick={() => toggleDelegation(true)}
+              >
+                Forward to rep
+              </Button>
+            )}
+            {delegation.delegationActive && delegation.delegatedRep && (
+              <span className="text-sm text-emerald-700">
+                Forwarding to {delegation.delegatedRep.name}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
@@ -94,7 +206,15 @@ export function CompanyRequestsPage({ userName }: { userName: string }) {
           <p className="text-slate-500">No requests in this category.</p>
         ) : (
           filtered.map((req) => (
-            <RequestCard key={req.id} request={req} role="company" showPipeline />
+            <RequestCard
+              key={req.id}
+              request={req}
+              role="company"
+              showPipeline
+              availableReps={reps}
+              onAction={handleAction}
+              onAssignRep={handleAssignRep}
+            />
           ))
         )}
       </div>
