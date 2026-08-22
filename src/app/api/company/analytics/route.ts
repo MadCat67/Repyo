@@ -47,7 +47,8 @@ export async function GET() {
 
   const byProcedure: Record<string, number> = {};
   for (const req of requests) {
-    byProcedure[req.procedureType] = (byProcedure[req.procedureType] ?? 0) + 1;
+    const key = req.procedureType ?? "Unspecified";
+    byProcedure[key] = (byProcedure[key] ?? 0) + 1;
   }
 
   const byUrgency: Record<string, number> = {};

@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { fetchJson } from "@/lib/api-client";
+import {
+  type FacilityDefaults,
+  type FavoriteRepOption,
+  type RequesterDefaults,
+  formatRepTerritory,
+} from "@/lib/request-form-types";
 import { cn, PROCEDURE_TYPES, REP_STATUS_LABELS } from "@/lib/utils";
-import { MapPin, Sparkles, User, X } from "lucide-react";
+import { Heart, MapPin, Sparkles, User, X } from "lucide-react";
 
 interface Company {
   id: string;
@@ -22,92 +28,234 @@ interface AvailableRep {
   status: string;
   distanceMiles: number | null;
   etaMinutes: number | null;
+  territories?: FavoriteRepOption["territories"];
 }
 
 interface RequestRepModalProps {
+  mode?: "provider" | "rep";
   companies: Company[];
-  defaultFacility?: {
-    name?: string;
-    address?: string;
-    phone?: string;
-    department?: string;
-    physician?: string;
-    lat?: number;
-    lng?: number;
-    state?: string;
-    zip?: string;
-  };
+  defaultFacility?: FacilityDefaults;
+  defaultRequester?: RequesterDefaults;
   preferredRepId?: string;
+  currentRepId?: string;
+  defaultCompanyId?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
+function mapFavoriteRep(raw: {
+  id: string;
+  name: string;
+  phone: string | null;
+  company?: { name: string } | null;
+  repProfile?: {
+    status: string;
+    products: string[];
+    territories?: FavoriteRepOption["territories"];
+  } | null;
+}): FavoriteRepOption {
+  return {
+    id: raw.id,
+    name: raw.name,
+    phone: raw.phone,
+    companyName: raw.company?.name ?? "",
+    products: raw.repProfile?.products ?? [],
+    status: raw.repProfile?.status ?? "OFF_DUTY",
+    territories: raw.repProfile?.territories ?? [],
+    isFavorite: true,
+  };
+}
+
+function mapCompanyRep(raw: {
+  id: string;
+  name: string;
+  phone: string | null;
+  repProfile?: {
+    status: string;
+    products: string[];
+    territories?: FavoriteRepOption["territories"];
+  } | null;
+}, companyName: string): FavoriteRepOption {
+  return {
+    id: raw.id,
+    name: raw.name,
+    phone: raw.phone,
+    companyName,
+    products: raw.repProfile?.products ?? [],
+    status: raw.repProfile?.status ?? "OFF_DUTY",
+    territories: raw.repProfile?.territories ?? [],
+  };
+}
+
 export function RequestRepModal({
+  mode = "provider",
   companies,
   defaultFacility,
+  defaultRequester,
   preferredRepId,
+  currentRepId,
+  defaultCompanyId,
   onClose,
   onSuccess,
 }: RequestRepModalProps) {
+  const isRepMode = mode === "rep";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedCompany, setSelectedCompany] = useState(companies[0]?.id ?? "");
+  const [requestKind, setRequestKind] = useState<"procedure" | "appointment">("procedure");
+  const [selectedCompany, setSelectedCompany] = useState(
+    defaultCompanyId ?? companies[0]?.id ?? ""
+  );
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedRepId, setSelectedRepId] = useState<string | null>(
-    preferredRepId ?? null
+    isRepMode ? currentRepId ?? null : preferredRepId ?? null
   );
   const [availableReps, setAvailableReps] = useState<AvailableRep[]>([]);
+  const [favoriteReps, setFavoriteReps] = useState<FavoriteRepOption[]>([]);
+  const [companyReps, setCompanyReps] = useState<FavoriteRepOption[]>([]);
   const [loadingReps, setLoadingReps] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [scheduledTime, setScheduledTime] = useState("09:00");
 
   const company = companies.find((c) => c.id === selectedCompany);
+  const isProcedure = requestKind === "procedure";
 
-  const loadAvailableReps = useCallback(async () => {
+  const scheduledAtIso = useMemo(() => {
+    if (!scheduledDate || !scheduledTime) return null;
+    const d = new Date(`${scheduledDate}T${scheduledTime}`);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }, [scheduledDate, scheduledTime]);
+
+  const loadReps = useCallback(async () => {
     if (!selectedCompany) {
       setAvailableReps([]);
+      setFavoriteReps([]);
+      setCompanyReps([]);
       return;
     }
 
     setLoadingReps(true);
     try {
+      if (isRepMode) {
+        const reps = await fetchJson<
+          {
+            id: string;
+            name: string;
+            phone: string | null;
+            repProfile?: {
+              status: string;
+              products: string[];
+              territories?: FavoriteRepOption["territories"];
+            } | null;
+          }[]
+        >("/api/company/reps");
+        const mapped = (Array.isArray(reps) ? reps : []).map((r) =>
+          mapCompanyRep(r, company?.name ?? "")
+        );
+        setCompanyReps(mapped);
+        setAvailableReps([]);
+        setFavoriteReps([]);
+
+        setSelectedRepId((current) => {
+          if (current && mapped.some((r) => r.id === current)) return current;
+          if (currentRepId && mapped.some((r) => r.id === currentRepId)) {
+            return currentRepId;
+          }
+          return mapped[0]?.id ?? null;
+        });
+        return;
+      }
+
       const params = new URLSearchParams({ companyId: selectedCompany });
       if (selectedProduct) params.set("product", selectedProduct);
-      if (defaultFacility?.lat != null) params.set("facilityLat", String(defaultFacility.lat));
-      if (defaultFacility?.lng != null) params.set("facilityLng", String(defaultFacility.lng));
-      if (defaultFacility?.state) params.set("facilityState", defaultFacility.state);
       if (defaultFacility?.zip) params.set("facilityZip", defaultFacility.zip);
+      if (scheduledAtIso) params.set("scheduledAt", scheduledAtIso);
 
-      const reps = await fetchJson<AvailableRep[]>(
-        `/api/reps/available?${params.toString()}`
-      );
+      const [reps, favorites] = await Promise.all([
+        fetchJson<AvailableRep[]>(`/api/reps/available?${params.toString()}`),
+        fetchJson<
+          {
+            id: string;
+            name: string;
+            phone: string | null;
+            company?: { name: string } | null;
+            repProfile?: {
+              status: string;
+              products: string[];
+              territories?: FavoriteRepOption["territories"];
+            } | null;
+          }[]
+        >("/api/favorites"),
+      ]);
+
       setAvailableReps(Array.isArray(reps) ? reps : []);
+      const favMapped = (Array.isArray(favorites) ? favorites : [])
+        .map(mapFavoriteRep)
+        .filter((f) => !f.companyName || f.companyName === company?.name);
+      setFavoriteReps(favMapped);
+      setCompanyReps([]);
 
       setSelectedRepId((current) => {
-        if (preferredRepId && reps.some((r) => r.id === preferredRepId)) {
+        if (preferredRepId && [...favMapped, ...(reps ?? [])].some((r) => r.id === preferredRepId)) {
           return preferredRepId;
         }
-        if (current && reps.some((r) => r.id === current)) {
+        if (current && [...favMapped, ...(reps ?? [])].some((r) => r.id === current)) {
           return current;
         }
-        return null;
+        return isRepMode ? currentRepId ?? null : null;
       });
     } catch {
       setAvailableReps([]);
+      setFavoriteReps([]);
+      setCompanyReps([]);
     } finally {
       setLoadingReps(false);
     }
   }, [
     selectedCompany,
     selectedProduct,
-    defaultFacility?.lat,
-    defaultFacility?.lng,
-    defaultFacility?.state,
     defaultFacility?.zip,
     preferredRepId,
+    currentRepId,
+    isRepMode,
+    company?.name,
+    scheduledAtIso,
   ]);
 
   useEffect(() => {
-    loadAvailableReps();
-  }, [loadAvailableReps]);
+    loadReps();
+  }, [loadReps]);
+
+  const availableIds = useMemo(
+    () => new Set(availableReps.map((r) => r.id)),
+    [availableReps]
+  );
+
+  const availableFavoriteReps = useMemo(
+    () => favoriteReps.filter((r) => availableIds.has(r.id)),
+    [favoriteReps, availableIds]
+  );
+
+  const favoriteIds = useMemo(
+    () => new Set(availableFavoriteReps.map((r) => r.id)),
+    [availableFavoriteReps]
+  );
+
+  const otherAvailableReps = useMemo(
+    () => availableReps.filter((r) => !favoriteIds.has(r.id)),
+    [availableReps, favoriteIds]
+  );
+
+  function deriveUrgency(date: string, time: string) {
+    const scheduledAt = new Date(`${date}T${time}`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const day = new Date(scheduledAt);
+    day.setHours(0, 0, 0, 0);
+    return day.getTime() === today.getTime() ? "ASAP" : "SCHEDULED";
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -115,28 +263,42 @@ export function RequestRepModal({
     setError("");
 
     const form = new FormData(e.currentTarget);
-    const scheduledDate = form.get("scheduledDate") as string;
-    const scheduledTime = form.get("scheduledTime") as string;
+
+    if (selectedRepId && !isRepMode && !availableIds.has(selectedRepId)) {
+      setError("Selected rep is not available at the scheduled date and time");
+      setLoading(false);
+      return;
+    }
 
     const payload = {
       companyId: selectedCompany,
       facilityName: form.get("facilityName"),
       facilityAddr: form.get("facilityAddr"),
-      facilityPhone: form.get("facilityPhone") || undefined,
       facilityZipCode: form.get("facilityZipCode"),
-      facilityLat: defaultFacility?.lat,
-      facilityLng: defaultFacility?.lng,
-      department: form.get("department"),
-      physicianName: form.get("physicianName"),
-      patientName: form.get("patientName"),
-      patientDOB: form.get("patientDOB"),
-      procedureType: form.get("procedureType"),
-      requestType: form.get("requestType"),
+      facilityContactName: form.get("facilityContactName"),
+      facilityContactPhone: form.get("facilityContactPhone"),
+      department: form.get("department") || undefined,
+      facilityPhone: form.get("facilityPhone") || undefined,
+      requesterName: form.get("requesterName"),
+      requesterPhone: form.get("requesterPhone"),
+      requesterEmail: form.get("requesterEmail"),
+      requesterFax: form.get("requesterFax") || undefined,
+      requestType: isProcedure ? "CASE" : "CHECK",
+      procedureType: isProcedure
+        ? form.get("procedureType")
+        : form.get("appointmentDetails") || undefined,
+      patientName: isProcedure ? form.get("patientName") : undefined,
+      patientDOB: isProcedure ? form.get("patientDOB") : undefined,
+      patientRoom: isProcedure ? form.get("patientRoom") : undefined,
       product: selectedProduct || undefined,
-      urgency: form.get("urgency"),
+      urgency: deriveUrgency(scheduledDate, scheduledTime),
       scheduledAt: new Date(`${scheduledDate}T${scheduledTime}`).toISOString(),
-      notes: form.get("notes") || undefined,
-      preferredRepId: selectedRepId || undefined,
+      notes: isProcedure
+        ? form.get("notes") || undefined
+        : form.get("appointmentDetails") || form.get("notes") || undefined,
+      preferredRepId: !isRepMode && selectedRepId ? selectedRepId : undefined,
+      repInitiated: isRepMode,
+      assignRepId: isRepMode ? selectedRepId : undefined,
     };
 
     try {
@@ -160,11 +322,89 @@ export function RequestRepModal({
     }
   }
 
+  function RepOption({
+    rep,
+    subtitle,
+    badge,
+  }: {
+    rep: FavoriteRepOption | AvailableRep;
+    subtitle?: string;
+    badge?: React.ReactNode;
+  }) {
+    const selected = selectedRepId === rep.id;
+    const territories =
+      "territories" in rep && rep.territories
+        ? formatRepTerritory(rep.territories)
+        : undefined;
+
+    return (
+      <button
+        type="button"
+        onClick={() => setSelectedRepId(rep.id)}
+        className={cn(
+          "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition",
+          selected
+            ? "border-rose-300 bg-rose-50 ring-1 ring-rose-200"
+            : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+        )}
+      >
+        <div
+          className={cn(
+            "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+            selected ? "border-rose-600 bg-rose-600" : "border-slate-300"
+          )}
+        >
+          {selected && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <User className="h-4 w-4 text-slate-400" />
+            <span className="font-medium text-slate-900">{rep.name}</span>
+            {"status" in rep && (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                {REP_STATUS_LABELS[rep.status] ?? rep.status}
+              </span>
+            )}
+            {badge}
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {subtitle ?? ("companyName" in rep ? rep.companyName : "")}
+          </p>
+          {"products" in rep && rep.products.length > 0 && (
+            <p className="mt-1 text-xs text-slate-500">{rep.products.join(" · ")}</p>
+          )}
+          {territories && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+              <MapPin className="h-3 w-3 shrink-0" />
+              {territories}
+            </p>
+          )}
+          {"etaMinutes" in rep && rep.etaMinutes != null && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+              <MapPin className="h-3 w-3" />
+              ~{rep.etaMinutes} min away
+              {rep.distanceMiles != null && ` (${rep.distanceMiles.toFixed(1)} mi)`}
+            </p>
+          )}
+        </div>
+      </button>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">Request a Rep</h2>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              {isRepMode ? "Create Provider Request" : "Request a Rep"}
+            </h2>
+            {!isRepMode && (
+              <p className="mt-0.5 text-sm text-slate-600">
+                We will match the closest rep for you
+              </p>
+            )}
+          </div>
           <button onClick={onClose} className="rounded-lg p-1 hover:bg-slate-100">
             <X className="h-5 w-5" />
           </button>
@@ -179,48 +419,51 @@ export function RequestRepModal({
 
           <section className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Facility
+              Facility Information
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                label="Facility / Hospital"
+                label="Hospital Name"
                 name="facilityName"
                 defaultValue={defaultFacility?.name}
                 required
               />
               <Input
-                label="Phone"
-                name="facilityPhone"
-                type="tel"
-                defaultValue={defaultFacility?.phone}
+                label="Department"
+                name="department"
+                defaultValue={defaultFacility?.department}
               />
             </div>
             <Input
-              label="Address"
+              label="Facility Address"
               name="facilityAddr"
               defaultValue={defaultFacility?.address}
               required
             />
-            <Input
-              label="Zip Code"
-              name="facilityZipCode"
-              defaultValue={defaultFacility?.zip}
-              required
-              placeholder="85044"
-              pattern="\d{5}"
-              maxLength={5}
-            />
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                label="Department"
-                name="department"
-                defaultValue={defaultFacility?.department}
+                label="Zip Code"
+                name="facilityZipCode"
+                defaultValue={defaultFacility?.zip}
+                required
+                placeholder="85044"
+                pattern="\d{5}"
+                maxLength={5}
+              />
+              <Input label="Facility Phone (optional)" name="facilityPhone" type="tel" />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Facility Contact Name"
+                name="facilityContactName"
+                defaultValue={defaultFacility?.contactName}
                 required
               />
               <Input
-                label="Physician Name"
-                name="physicianName"
-                defaultValue={defaultFacility?.physician}
+                label="Facility Contact Phone"
+                name="facilityContactPhone"
+                type="tel"
+                defaultValue={defaultFacility?.contactPhone}
                 required
               />
             </div>
@@ -228,91 +471,147 @@ export function RequestRepModal({
 
           <section className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Patient Info (Encrypted)
+              Requester Information
             </h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Input label="Patient Name" name="patientName" required />
-              <Input label="Date of Birth" name="patientDOB" type="date" required />
+              <Input
+                label="Requester Name"
+                name="requesterName"
+                defaultValue={defaultRequester?.name}
+                required
+              />
+              <Input
+                label="Requester Phone"
+                name="requesterPhone"
+                type="tel"
+                defaultValue={defaultRequester?.phone}
+                required
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="Requester Email"
+                name="requesterEmail"
+                type="email"
+                defaultValue={defaultRequester?.email}
+                required
+              />
+              <Input
+                label="Requester Fax"
+                name="requesterFax"
+                type="tel"
+                defaultValue={defaultRequester?.fax}
+              />
             </div>
           </section>
 
           <section className="space-y-4">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Procedure Details
+              Request Details
             </h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Select
-                label="Procedure Type"
-                name="procedureType"
+            <div className="flex gap-2">
+              {(["procedure", "appointment"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => setRequestKind(kind)}
+                  className={cn(
+                    "rounded-lg px-4 py-2 text-sm font-medium transition",
+                    requestKind === kind
+                      ? "bg-rose-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  )}
+                >
+                  {kind === "procedure" ? "Procedure" : "Appointment"}
+                </button>
+              ))}
+            </div>
+
+            {isProcedure ? (
+              <>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Patient Info (Encrypted)
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input label="Patient Name" name="patientName" required />
+                  <Input label="Date of Birth" name="patientDOB" type="date" required />
+                </div>
+                <Input label="Room Number" name="patientRoom" required />
+                <Select
+                  label="Procedure Type"
+                  name="procedureType"
+                  required
+                  options={PROCEDURE_TYPES.map((p) => ({ value: p, label: p }))}
+                />
+              </>
+            ) : (
+              <Textarea
+                label="Appointment Details"
+                name="appointmentDetails"
+                rows={3}
                 required
-                options={PROCEDURE_TYPES.map((p) => ({ value: p, label: p }))}
+                placeholder="Reason for visit, device check details, etc."
               />
-              <Select
-                label="Request Type"
-                name="requestType"
-                options={[
-                  { value: "CASE", label: "Case" },
-                  { value: "CHECK", label: "Check" },
-                ]}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Select
-                label="Device Company"
-                name="companyId"
-                value={selectedCompany}
-                onChange={(e) => {
-                  setSelectedCompany(e.target.value);
-                  setSelectedRepId(null);
-                }}
-                options={companies.map((c) => ({ value: c.id, label: c.name }))}
-              />
-              <Select
-                label="Product"
-                name="product"
-                value={selectedProduct}
-                onChange={(e) => {
-                  setSelectedProduct(e.target.value);
-                  setSelectedRepId(null);
-                }}
-                options={[
-                  { value: "", label: "Any product" },
-                  ...(company?.products ?? []).map((p) => ({ value: p, label: p })),
-                ]}
-              />
-            </div>
+            )}
+
             <Select
-              label="Urgency"
-              name="urgency"
+              label="Device Company"
+              name="companyId"
+              value={selectedCompany}
+              onChange={(e) => {
+                setSelectedCompany(e.target.value);
+                setSelectedRepId(isRepMode ? currentRepId ?? null : null);
+              }}
+              options={companies.map((c) => ({ value: c.id, label: c.name }))}
+            />
+            <Select
+              label="Product (optional)"
+              name="product"
+              value={selectedProduct}
+              onChange={(e) => {
+                setSelectedProduct(e.target.value);
+                if (!isRepMode) setSelectedRepId(null);
+              }}
               options={[
-                { value: "ASAP", label: "ASAP" },
-                { value: "SAME_DAY", label: "Same Day" },
-                { value: "SCHEDULED", label: "Scheduled" },
+                { value: "", label: "Any product" },
+                ...(company?.products ?? []).map((p) => ({ value: p, label: p })),
               ]}
             />
             <div className="grid gap-4 sm:grid-cols-2">
               <Input
-                label="Procedure Date"
+                label={isProcedure ? "Procedure Date" : "Appointment Date"}
                 name="scheduledDate"
                 type="date"
+                value={scheduledDate}
+                onChange={(e) => {
+                  setScheduledDate(e.target.value);
+                  if (!isRepMode) setSelectedRepId(null);
+                }}
                 required
               />
               <Input
-                label="Procedure Time"
+                label={isProcedure ? "Procedure Time" : "Appointment Time"}
                 name="scheduledTime"
                 type="time"
+                value={scheduledTime}
+                onChange={(e) => {
+                  setScheduledTime(e.target.value);
+                  if (!isRepMode) setSelectedRepId(null);
+                }}
                 required
               />
             </div>
-            <Textarea label="Additional Notes" name="notes" rows={3} />
+            {isProcedure && <Textarea label="Additional Notes" name="notes" rows={3} />}
           </section>
 
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Select Rep
+                {isRepMode ? "Assign Rep" : "Select Rep"}
               </h3>
-              {!loadingReps && (
+              {!loadingReps && !isRepMode && (
                 <span className="text-xs text-slate-500">
                   {availableReps.length} available
                 </span>
@@ -320,13 +619,23 @@ export function RequestRepModal({
             </div>
 
             {loadingReps ? (
-              <p className="text-sm text-slate-500">Loading available reps...</p>
-            ) : availableReps.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
-                No reps are currently available for this company
-                {selectedProduct ? ` and product` : ""}. Your request will be
-                submitted for assignment when a rep becomes available.
-              </div>
+              <p className="text-sm text-slate-500">Loading reps...</p>
+            ) : isRepMode ? (
+              companyReps.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+                  No reps found for your company. Select a device company above.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {companyReps.map((rep) => (
+                    <RepOption
+                      key={rep.id}
+                      rep={rep}
+                      subtitle={rep.id === currentRepId ? "You" : rep.companyName}
+                    />
+                  ))}
+                </div>
+              )
             ) : (
               <div className="space-y-2">
                 <button
@@ -355,64 +664,45 @@ export function RequestRepModal({
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-rose-500" />
                       <span className="font-medium text-slate-900">
-                        Auto-assign nearest rep
+                        Auto-assign closest rep
                       </span>
                     </div>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      We&apos;ll match the closest available credentialed rep
+                      We will match the closest rep for you
                     </p>
                   </div>
                 </button>
 
-                {availableReps.map((rep) => (
-                  <button
-                    key={rep.id}
-                    type="button"
-                    onClick={() => setSelectedRepId(rep.id)}
-                    className={cn(
-                      "flex w-full items-start gap-3 rounded-lg border p-3 text-left transition",
-                      selectedRepId === rep.id
-                        ? "border-rose-300 bg-rose-50 ring-1 ring-rose-200"
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
-                        selectedRepId === rep.id
-                          ? "border-rose-600 bg-rose-600"
-                          : "border-slate-300"
-                      )}
-                    >
-                      {selectedRepId === rep.id && (
-                        <div className="h-1.5 w-1.5 rounded-full bg-white" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <User className="h-4 w-4 text-slate-400" />
-                        <span className="font-medium text-slate-900">{rep.name}</span>
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                          {REP_STATUS_LABELS[rep.status] ?? rep.status}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-500">{rep.companyName}</p>
-                      {rep.products.length > 0 && (
-                        <p className="mt-1 text-xs text-slate-500">
-                          {rep.products.join(" · ")}
-                        </p>
-                      )}
-                      {rep.etaMinutes != null && (
-                        <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-                          <MapPin className="h-3 w-3" />
-                          ~{rep.etaMinutes} min away
-                          {rep.distanceMiles != null &&
-                            ` (${rep.distanceMiles.toFixed(1)} mi)`}
-                        </p>
-                      )}
-                    </div>
-                  </button>
+                {availableFavoriteReps.length > 0 && (
+                  <>
+                    <p className="pt-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Favorite Reps
+                    </p>
+                    {availableFavoriteReps.map((rep) => (
+                      <RepOption
+                        key={rep.id}
+                        rep={rep}
+                        badge={
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700">
+                            <Heart className="h-3 w-3 fill-current" />
+                            Favorite
+                          </span>
+                        }
+                      />
+                    ))}
+                  </>
+                )}
+
+                {otherAvailableReps.map((rep) => (
+                  <RepOption key={rep.id} rep={rep} />
                 ))}
+
+                {availableFavoriteReps.length === 0 && otherAvailableReps.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-center text-sm text-slate-600">
+                    No reps are currently available. Submit anyway and we will match the
+                    closest rep for you when one becomes available.
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -421,12 +711,14 @@ export function RequestRepModal({
             <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || (isRepMode && !selectedRepId)}>
               {loading
                 ? "Submitting..."
-                : selectedRepId
-                  ? "Request Selected Rep"
-                  : "Submit Request"}
+                : isRepMode
+                  ? "Create & Assign Request"
+                  : selectedRepId
+                    ? "Request Selected Rep"
+                    : "Submit Request"}
             </Button>
           </div>
         </form>

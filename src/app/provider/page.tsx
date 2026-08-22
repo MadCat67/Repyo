@@ -19,10 +19,16 @@ export default async function ProviderPage() {
       defaultFacility={{
         name: profile?.facilityName ?? undefined,
         address: profile?.facilityAddress ?? undefined,
-        phone: profile?.facilityPhone ?? undefined,
-        department: profile?.department ?? undefined,
-        physician: profile?.defaultPhysician ?? undefined,
         zip: profile?.zipCode ?? undefined,
+        department: profile?.department ?? undefined,
+        contactName: profile?.facilityContactName ?? undefined,
+        contactPhone: profile?.facilityContactPhone ?? undefined,
+      }}
+      defaultRequester={{
+        name: session.user.name,
+        email: session.user.email ?? undefined,
+        phone: profile?.requesterPhone ?? undefined,
+        fax: profile?.requesterFax ?? undefined,
       }}
     />
   );

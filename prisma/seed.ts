@@ -147,9 +147,13 @@ async function main() {
           facilityName: "Valley Heart Center",
           facilityAddress: "1200 Medical Blvd, Phoenix, AZ 85004",
           facilityPhone: "(602) 555-0100",
+          facilityContactName: "Maria Lopez",
+          facilityContactPhone: "(602) 555-0100",
           department: "EP Lab",
           defaultPhysician: "Dr. Sarah Chen",
           zipCode: "85044",
+          requesterPhone: "(602) 555-0101",
+          requesterFax: "(602) 555-0199",
         },
       },
     },
@@ -163,9 +167,13 @@ async function main() {
         facilityName: "Valley Heart Center",
         facilityAddress: "1200 Medical Blvd, Phoenix, AZ 85004",
         facilityPhone: "(602) 555-0100",
+        facilityContactName: "Maria Lopez",
+        facilityContactPhone: "(602) 555-0100",
         department: "EP Lab",
         defaultPhysician: "Dr. Sarah Chen",
         zipCode: "85044",
+        requesterPhone: "(602) 555-0101",
+        requesterFax: "(602) 555-0199",
       },
     });
   }
@@ -310,6 +318,22 @@ async function main() {
     }
   );
 
+  async function seedRepSchedule(repProfileId: string) {
+    await db.repScheduleRule.deleteMany({ where: { repProfileId } });
+    await db.repScheduleRule.createMany({
+      data: [1, 2, 3, 4, 5].map((dayOfWeek) => ({
+        repProfileId,
+        dayOfWeek,
+        startTime: "08:00",
+        endTime: "17:00",
+      })),
+    });
+  }
+
+  await seedRepSchedule(repMike.id);
+  await seedRepSchedule(repLisa.id);
+  await seedRepSchedule(repTom.id);
+
   await db.user.upsert({
     where: { email: "admin@demo.com" },
     update: {
@@ -375,9 +399,15 @@ async function main() {
       facilityLat?: number;
       facilityLng?: number;
       department: string;
-      physicianName: string;
+      requesterName?: string;
+      requesterPhone?: string;
+      requesterEmail?: string;
+      facilityContactName?: string;
+      facilityContactPhone?: string;
+      physicianName?: string;
       patientName: string;
       patientDOB: Date;
+      patientRoom?: string;
       procedureType: string;
       product?: string;
       urgency: "ASAP" | "SAME_DAY" | "SCHEDULED";
@@ -400,12 +430,18 @@ async function main() {
         facilityName: data.facilityName,
         facilityAddr: data.facilityAddr,
         facilityPhone: "(602) 555-0100",
+        facilityContactName: data.facilityContactName ?? "Maria Lopez",
+        facilityContactPhone: data.facilityContactPhone ?? "(602) 555-0100",
         facilityLat: data.facilityLat,
         facilityLng: data.facilityLng,
         department: data.department,
+        requesterName: data.requesterName ?? "Dr. Sarah Chen",
+        requesterPhone: data.requesterPhone ?? "(602) 555-0101",
+        requesterEmail: data.requesterEmail ?? "provider@demo.com",
         physicianName: data.physicianName,
         patientNameEnc: encryptPHI(data.patientName),
         patientDOBEnc: encryptDate(data.patientDOB),
+        patientRoomEnc: data.patientRoom ? encryptPHI(data.patientRoom) : encryptPHI("412A"),
         procedureType: data.procedureType,
         product: data.product,
         urgency: data.urgency,

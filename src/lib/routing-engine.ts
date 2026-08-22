@@ -2,10 +2,16 @@ import {
   CredentialStatus,
   RepStatus,
   type RepProfile,
+  type RepAvailabilityBlock,
+  type RepScheduleRule,
   type Territory,
   type User,
 } from "@prisma/client";
 import { db } from "./db";
+import {
+  isRepAvailableAtTime,
+  isRepLocationSharingActive,
+} from "./rep-availability";
 import { distanceMiles, estimateEtaMinutes } from "./utils";
 
 export interface RoutingCriteria {
@@ -17,6 +23,7 @@ export interface RoutingCriteria {
   facilityZip?: string | null;
   product?: string | null;
   preferredRepId?: string | null;
+  scheduledAt?: Date | null;
 }
 
 export interface EligibleRep {
@@ -27,10 +34,17 @@ export interface EligibleRep {
   etaMinutes: number;
   lat: number | null;
   lng: number | null;
+  locationSharing: boolean;
 }
 
 type RepWithProfile = User & {
-  repProfile: (RepProfile & { territories: Territory[] }) | null;
+  repProfile:
+    | (RepProfile & {
+        territories: Territory[];
+        scheduleRules: RepScheduleRule[];
+        availabilityBlocks: RepAvailabilityBlock[];
+      })
+    | null;
 };
 
 function repCoversTerritory(
@@ -65,6 +79,8 @@ function repHasProduct(rep: RepWithProfile, product?: string | null): boolean {
 export async function findEligibleReps(
   criteria: RoutingCriteria
 ): Promise<EligibleRep[]> {
+  const scheduledAt = criteria.scheduledAt ?? new Date();
+
   const reps = await db.user.findMany({
     where: {
       role: "REP",
@@ -75,7 +91,18 @@ export async function findEligibleReps(
       },
     },
     include: {
-      repProfile: { include: { territories: true } },
+      repProfile: {
+        include: {
+          territories: true,
+          scheduleRules: true,
+          availabilityBlocks: {
+            where: {
+              startAt: { lte: scheduledAt },
+              endAt: { gt: scheduledAt },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -86,10 +113,30 @@ export async function findEligibleReps(
     if (!repCoversTerritory(rep, criteria)) continue;
     if (!repHasProduct(rep, criteria.product)) continue;
 
+    const { scheduleRules, availabilityBlocks, status } = rep.repProfile;
+    if (
+      !isRepAvailableAtTime(
+        scheduledAt,
+        scheduleRules,
+        availabilityBlocks,
+        status
+      )
+    ) {
+      continue;
+    }
+
+    const locationSharing = isRepLocationSharingActive(
+      scheduledAt,
+      scheduleRules,
+      availabilityBlocks,
+      status
+    );
+
     const { lat, lng } = rep.repProfile;
     let dist = Infinity;
 
     if (
+      locationSharing &&
       lat != null &&
       lng != null &&
       criteria.facilityLat != null &&
@@ -108,10 +155,12 @@ export async function findEligibleReps(
       userId: rep.id,
       name: rep.name,
       phone: rep.phone,
-      distanceMiles: dist === Infinity ? 0 : dist,
-      etaMinutes: dist === Infinity ? 0 : estimateEtaMinutes(dist),
-      lat,
-      lng,
+      distanceMiles: locationSharing && dist !== Infinity ? dist : 0,
+      etaMinutes:
+        locationSharing && dist !== Infinity ? estimateEtaMinutes(dist) : 0,
+      lat: locationSharing ? lat : null,
+      lng: locationSharing ? lng : null,
+      locationSharing,
     });
   }
 
@@ -130,21 +179,54 @@ export async function assignRepToRequest(
   requestId: string,
   repId: string,
   criteria: RoutingCriteria
-): Promise<{ assigned: boolean; repName?: string }> {
+): Promise<{ assigned: boolean; repName?: string; error?: string }> {
+  const scheduledAt = criteria.scheduledAt ?? new Date();
+
   const rep = await db.user.findFirst({
     where: { id: repId, role: "REP", companyId: criteria.companyId },
-    include: { repProfile: true },
+    include: {
+      repProfile: {
+        include: {
+          scheduleRules: true,
+          availabilityBlocks: {
+            where: {
+              startAt: { lte: scheduledAt },
+              endAt: { gt: scheduledAt },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!rep?.repProfile) {
-    return { assigned: false };
+    return { assigned: false, error: "Rep not found" };
   }
 
+  if (
+    !isRepAvailableAtTime(
+      scheduledAt,
+      rep.repProfile.scheduleRules,
+      rep.repProfile.availabilityBlocks,
+      rep.repProfile.status
+    )
+  ) {
+    return { assigned: false, error: "Rep is not available at the scheduled time" };
+  }
+
+  const locationSharing = isRepLocationSharingActive(
+    scheduledAt,
+    rep.repProfile.scheduleRules,
+    rep.repProfile.availabilityBlocks,
+    rep.repProfile.status
+  );
+
   let etaMinutes: number | null = null;
-  let repLat = rep.repProfile.lat;
-  let repLng = rep.repProfile.lng;
+  let repLat: number | null = locationSharing ? rep.repProfile.lat : null;
+  let repLng: number | null = locationSharing ? rep.repProfile.lng : null;
 
   if (
+    locationSharing &&
     repLat != null &&
     repLng != null &&
     criteria.facilityLat != null &&

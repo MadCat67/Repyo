@@ -25,7 +25,7 @@ export default async function HomePage() {
   const portals = [
     {
       role: "Healthcare Provider",
-      desc: "Request/schedule credentialed reps with live tracking and manage your favorite field team.",
+      desc: "Request/schedule qualified reps with live tracking and manage your favorite field team.",
       href: "/login",
       icon: Stethoscope,
       accent: "from-rose-500 to-pink-500",
@@ -39,17 +39,10 @@ export default async function HomePage() {
     },
     {
       role: "Company Admin",
-      desc: "Oversee your rep roster, territories, credentialing, and operational analytics.",
+      desc: "Oversee your rep roster, territories, qualification status, and operational analytics.",
       href: "/login",
       icon: Building2,
       accent: "from-pink-500 to-rose-600",
-    },
-    {
-      role: "Platform Admin",
-      desc: "Manage tenants, users, and system-wide configuration across the network.",
-      href: "/login",
-      icon: Shield,
-      accent: "from-slate-700 to-slate-900",
     },
   ];
 
@@ -57,7 +50,7 @@ export default async function HomePage() {
     {
       icon: Zap,
       title: "Intelligent routing",
-      desc: "Match the right rep by territory, product line, credentials, and availability.",
+      desc: "Match the right rep by territory, product line, qualification, and availability.",
     },
     {
       icon: MapPin,
@@ -78,7 +71,7 @@ export default async function HomePage() {
 
   const steps = [
     { step: "01", title: "Request a rep", desc: "Providers submit case details, urgency, and device company in seconds." },
-    { step: "02", title: "Auto-assign & track", desc: "GoRepYo routes to available credentialed reps and streams live status." },
+    { step: "02", title: "Auto-assign & track", desc: "GoRepYo routes to available qualified reps and streams live status." },
     { step: "03", title: "Complete request", desc: "Reps confirm arrival and completion — full audit trail included." },
   ];
 
@@ -127,7 +120,7 @@ export default async function HomePage() {
             </h1>
 
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-600 sm:text-xl">
-              GoRepYo connects hospitals and clinics with credentialed medical device
+              GoRepYo connects hospitals and clinics with qualified medical device
               representatives — intelligent routing, live tracking, and streamlined
               scheduling for cath lab, EP lab, OR and clinics.
             </p>
@@ -221,7 +214,7 @@ export default async function HomePage() {
             </p>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {portals.map((portal) => (
               <Link
                 key={portal.role}

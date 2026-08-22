@@ -2,22 +2,33 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PortalShell } from "@/components/layout/portal-shell";
+import { RequestRepModal } from "@/components/provider/request-rep-modal";
 import { RequestCard, type RequestData } from "@/components/shared/request-card";
 import { Button } from "@/components/ui/button";
 import { connectEventSource, fetchJson } from "@/lib/api-client";
 import { REP_STATUS_LABELS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { format, isToday, isTomorrow } from "date-fns";
+import { Plus } from "lucide-react";
 
 const REP_STATUSES = ["AVAILABLE", "BUSY", "OFF_DUTY", "VACATION"] as const;
 
-export function RepDashboard({ userName }: { userName: string }) {
+export function RepDashboard({
+  userName,
+  userId,
+  companyId,
+}: {
+  userName: string;
+  userId: string;
+  companyId?: string | null;
+}) {
   const [requests, setRequests] = useState<RequestData[]>([]);
   const [status, setStatus] = useState("OFF_DUTY");
   const [onCall, setOnCall] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [companyReps, setCompanyReps] = useState<{ id: string; name: string }[]>([]);
+  const [companies, setCompanies] = useState<{ id: string; name: string; products: string[] }[]>([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -41,6 +52,9 @@ export function RepDashboard({ userName }: { userName: string }) {
   useEffect(() => {
     loadData();
     const es = connectEventSource("/api/notifications/stream", loadData);
+    fetchJson<{ id: string; name: string; products: string[] }[]>("/api/companies")
+      .then((data) => setCompanies(Array.isArray(data) ? data : []))
+      .catch(() => setCompanies([]));
     return () => es.close();
   }, [loadData]);
 
@@ -119,11 +133,17 @@ export function RepDashboard({ userName }: { userName: string }) {
 
   return (
     <PortalShell portal="rep" userName={userName}>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Rep Dashboard</h1>
-        <p className="text-sm text-slate-600">
-          {pending.length} pending · {urgent.length} urgent
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Rep Dashboard</h1>
+          <p className="text-sm text-slate-600">
+            {pending.length} pending · {urgent.length} urgent
+          </p>
+        </div>
+        <Button onClick={() => setShowCreateModal(true)} disabled={companies.length === 0}>
+          <Plus className="h-4 w-4" />
+          Create Provider Request
+        </Button>
       </div>
 
       {error && (
@@ -214,113 +234,16 @@ export function RepDashboard({ userName }: { userName: string }) {
           </div>
         )}
       </section>
-    </PortalShell>
-  );
-}
 
-export function RepSchedulePage({ userName }: { userName: string }) {
-  const [requests, setRequests] = useState<RequestData[]>([]);
-  const [onCall, setOnCall] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const [reqData, profile] = await Promise.all([
-          fetchJson<RequestData[]>("/api/requests"),
-          fetchJson<{ onCallEnabled?: boolean } | null>("/api/rep/profile"),
-        ]);
-        setRequests(Array.isArray(reqData) ? reqData : []);
-        setOnCall(profile?.onCallEnabled ?? false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load schedule");
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  async function toggleOnCall() {
-    try {
-      const next = !onCall;
-      await fetchJson("/api/rep/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ onCallEnabled: next }),
-      });
-      setOnCall(next);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update on-call status");
-    }
-  }
-
-  const scheduled = requests
-    .filter((r) => !["CANCELLED"].includes(r.status))
-    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
-
-  function dayLabel(date: string) {
-    const d = new Date(date);
-    if (isToday(d)) return "Today";
-    if (isTomorrow(d)) return "Tomorrow";
-    return format(d, "EEEE, MMM d");
-  }
-
-  const grouped = scheduled.reduce<Record<string, RequestData[]>>((acc, req) => {
-    const key = dayLabel(req.scheduledAt);
-    (acc[key] ??= []).push(req);
-    return acc;
-  }, {});
-
-  return (
-    <PortalShell portal="rep" userName={userName}>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Schedule</h1>
-          <p className="text-sm text-slate-600">{scheduled.length} upcoming cases</p>
-        </div>
-        <button
-          onClick={toggleOnCall}
-          className={cn(
-            "rounded-lg px-4 py-2 text-sm font-medium",
-            onCall ? "bg-rose-600 text-white" : "bg-white ring-1 ring-slate-200 text-slate-700"
-          )}
-        >
-          {onCall ? "On Call" : "Off Call"}
-        </button>
-      </div>
-
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
-      {loading ? (
-        <p className="text-slate-500">Loading...</p>
-      ) : Object.keys(grouped).length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-12 text-center">
-          <p className="text-slate-600">No scheduled cases</p>
-        </div>
-      ) : (
-        Object.entries(grouped).map(([day, dayRequests]) => (
-          <section key={day} className="mb-8">
-            <h2 className="mb-3 text-sm font-semibold uppercase text-rose-600">{day}</h2>
-            <div className="grid gap-3">
-              {dayRequests.map((req) => (
-                <div key={req.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
-                  <div>
-                    <p className="font-medium text-slate-900">{req.facilityName}</p>
-                    <p className="text-sm text-slate-600">{req.procedureType}</p>
-                    <p className="text-xs text-slate-500">{format(new Date(req.scheduledAt), "h:mm a")}</p>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                    {req.status.replace("_", " ")}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        ))
+      {showCreateModal && companies.length > 0 && (
+        <RequestRepModal
+          mode="rep"
+          companies={companies}
+          currentRepId={userId}
+          defaultCompanyId={companyId ?? undefined}
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={loadData}
+        />
       )}
     </PortalShell>
   );

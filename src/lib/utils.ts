@@ -61,3 +61,10 @@ export const REP_STATUS_LABELS: Record<string, string> = {
   OFF_DUTY: "Off Duty",
   VACATION: "Vacation",
 };
+
+export const QUALIFIED_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Qualified",
+  PENDING: "Pending Qualification",
+  EXPIRED: "Qualification Expired",
+  REVOKED: "Not Qualified",
+};

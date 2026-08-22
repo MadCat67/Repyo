@@ -8,5 +8,11 @@ export default async function RepPage() {
     redirect("/login");
   }
 
-  return <RepDashboard userName={session.user.name} />;
+  return (
+    <RepDashboard
+      userName={session.user.name}
+      userId={session.user.id}
+      companyId={session.user.companyId}
+    />
+  );
 }

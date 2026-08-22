@@ -16,10 +16,13 @@ export async function GET(request: Request) {
   const facilityLng = searchParams.get("facilityLng");
   const facilityState = searchParams.get("facilityState") || undefined;
   const facilityZip = searchParams.get("facilityZip") || undefined;
+  const scheduledAtParam = searchParams.get("scheduledAt");
 
   if (!companyId) {
     return NextResponse.json({ error: "companyId required" }, { status: 400 });
   }
+
+  const scheduledAt = scheduledAtParam ? new Date(scheduledAtParam) : new Date();
 
   try {
     const eligible = await findEligibleReps({
@@ -30,6 +33,7 @@ export async function GET(request: Request) {
       facilityLng: facilityLng ? Number(facilityLng) : null,
       facilityState: facilityState || null,
       facilityZip: facilityZip || null,
+      scheduledAt,
     });
 
     if (eligible.length === 0) {
@@ -44,7 +48,14 @@ export async function GET(request: Request) {
         phone: true,
         company: { select: { name: true } },
         repProfile: {
-          select: { products: true, status: true, credentialStatus: true },
+          select: {
+            products: true,
+            status: true,
+            credentialStatus: true,
+            territories: {
+              select: { state: true, county: true, zipCode: true },
+            },
+          },
         },
       },
     });
@@ -60,8 +71,10 @@ export async function GET(request: Request) {
         companyName: rep?.company?.name ?? "",
         products: rep?.repProfile?.products ?? [],
         status: rep?.repProfile?.status ?? "AVAILABLE",
-        distanceMiles: e.distanceMiles > 0 ? e.distanceMiles : null,
-        etaMinutes: e.etaMinutes > 0 ? e.etaMinutes : null,
+        territories: rep?.repProfile?.territories ?? [],
+        locationSharing: e.locationSharing,
+        distanceMiles: e.locationSharing && e.distanceMiles > 0 ? e.distanceMiles : null,
+        etaMinutes: e.locationSharing && e.etaMinutes > 0 ? e.etaMinutes : null,
       };
     });
 

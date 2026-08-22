@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "GoRepYo — Healthcare Rep Dispatch",
   description:
-    "HIPAA-compliant platform connecting healthcare providers with credentialed medical device representatives.",
+    "HIPAA-compliant platform connecting healthcare providers with qualified medical device representatives.",
   icons: {
     icon: "/icon.png",
     apple: "/apple-icon.png",

@@ -16,8 +16,13 @@ export async function signupAction(formData: FormData) {
     role: formData.get("role"),
     companyId: formData.get("companyId") || undefined,
     facilityName: formData.get("facilityName") || undefined,
+    facilityAddress: formData.get("facilityAddress") || undefined,
     department: formData.get("department") || undefined,
     zipCode: formData.get("zipCode") || undefined,
+    facilityContactName: formData.get("facilityContactName") || undefined,
+    facilityContactPhone: formData.get("facilityContactPhone") || undefined,
+    requesterPhone: formData.get("requesterPhone") || undefined,
+    requesterFax: formData.get("requesterFax") || undefined,
     zipCodeStart: formData.get("zipCodeStart") || undefined,
     zipCodeEnd: formData.get("zipCodeEnd") || undefined,
   });
@@ -27,8 +32,23 @@ export async function signupAction(formData: FormData) {
     return { error: firstIssue };
   }
 
-  const { name, email, password, role, companyId, facilityName, department, zipCode, zipCodeStart, zipCodeEnd } =
-    parsed.data;
+  const {
+    name,
+    email,
+    password,
+    role,
+    companyId,
+    facilityName,
+    facilityAddress,
+    department,
+    zipCode,
+    facilityContactName,
+    facilityContactPhone,
+    requesterPhone,
+    requesterFax,
+    zipCodeStart,
+    zipCodeEnd,
+  } = parsed.data;
   const normalizedEmail = email.trim().toLowerCase();
 
   const existing = await db.user.findUnique({
@@ -62,11 +82,17 @@ export async function signupAction(formData: FormData) {
         zipCodeEnd: zipCodeEnd?.trim().slice(0, 5) ?? null,
       }),
       ...(role === "PROVIDER" && {
+        phone: requesterPhone?.trim() || null,
         providerInfo: {
           create: {
             facilityName: facilityName?.trim() || null,
+            facilityAddress: facilityAddress?.trim() || null,
+            facilityContactName: facilityContactName?.trim() || null,
+            facilityContactPhone: facilityContactPhone?.trim() || null,
             department: department?.trim() || null,
             zipCode: zipCode?.trim().slice(0, 5) ?? null,
+            requesterPhone: requesterPhone?.trim() || null,
+            requesterFax: requesterFax?.trim() || null,
           },
         },
       }),

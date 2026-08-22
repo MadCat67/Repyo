@@ -19,10 +19,14 @@ export interface RequestData {
   department?: string;
   physicianName?: string;
   notes?: string | null;
+  repLat?: number | null;
+  repLng?: number | null;
   etaMinutes?: number | null;
   assignedRep?: { id: string; name: string; phone: string | null } | null;
   assignedAdmin?: { id: string; name: string } | null;
   provider?: { id: string; name: string; phone: string | null } | null;
+  initiatedByRep?: { id: string; name: string; phone: string | null } | null;
+  requesterName?: string | null;
   company?: { name: string } | null;
   statusLogs?: { status: string; createdAt: string; note?: string | null }[];
 }
@@ -74,6 +78,16 @@ export function RequestCard({
                 Provider: {request.provider.name}
               </p>
             )}
+            {!request.provider && request.initiatedByRep && (
+              <p className="text-xs text-slate-500">
+                Created by rep: {request.initiatedByRep.name}
+              </p>
+            )}
+            {request.requesterName && (
+              <p className="text-xs text-slate-500">
+                Requester: {request.requesterName}
+              </p>
+            )}
             {role !== "company" && request.company && (
               <p className="text-xs text-slate-500">{request.company.name}</p>
             )}
@@ -89,7 +103,8 @@ export function RequestCard({
             <StatusPipeline currentStatus={request.status} />
             {request.department && (
               <p className="mt-2 text-xs text-slate-500">
-                {request.department} · {request.physicianName}
+                {request.department}
+                {request.physicianName ? ` · ${request.physicianName}` : ""}
               </p>
             )}
             {request.notes && (
@@ -119,7 +134,9 @@ export function RequestCard({
                 Call
               </a>
             )}
-            {request.etaMinutes != null && request.status === "EN_ROUTE" && (
+            {request.etaMinutes != null &&
+              request.repLat != null &&
+              request.status === "EN_ROUTE" && (
               <span className="flex items-center gap-1 text-slate-500">
                 <MapPin className="h-4 w-4" />
                 ETA {request.etaMinutes} min

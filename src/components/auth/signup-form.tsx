@@ -93,20 +93,63 @@ export function SignupForm() {
 
           {role === "PROVIDER" && (
             <>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Facility Information
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Used to pre-fill request forms after signup.
+                </p>
+              </div>
               <Input
-                label="Facility / Hospital (optional)"
+                label="Hospital Name"
                 name="facilityName"
+                required
                 autoComplete="organization"
               />
-              <Input label="Department (optional)" name="department" />
               <Input
-                label="Zip Code"
-                name="zipCode"
+                label="Facility Address"
+                name="facilityAddress"
                 required
-                placeholder="85044"
-                pattern="\d{5}"
-                maxLength={5}
+                autoComplete="street-address"
               />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input label="Department" name="department" />
+                <Input
+                  label="Zip Code"
+                  name="zipCode"
+                  required
+                  placeholder="85044"
+                  pattern="\d{5}"
+                  maxLength={5}
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label="Facility Contact Name"
+                  name="facilityContactName"
+                  required
+                />
+                <Input
+                  label="Facility Contact Phone"
+                  name="facilityContactPhone"
+                  type="tel"
+                  required
+                />
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Your Information (Requester)
+                </p>
+              </div>
+              <Input
+                label="Your Phone"
+                name="requesterPhone"
+                type="tel"
+                required
+                autoComplete="tel"
+              />
+              <Input label="Your Fax (optional)" name="requesterFax" type="tel" />
             </>
           )}
 

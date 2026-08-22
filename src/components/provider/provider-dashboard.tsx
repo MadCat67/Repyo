@@ -6,21 +6,20 @@ import { RequestRepModal } from "@/components/provider/request-rep-modal";
 import { RequestCard, type RequestData } from "@/components/shared/request-card";
 import { Button } from "@/components/ui/button";
 import { ApiError, connectEventSource, fetchJson } from "@/lib/api-client";
+import type { FacilityDefaults, RequesterDefaults } from "@/lib/request-form-types";
 import { Plus, RefreshCw } from "lucide-react";
 
 interface ProviderDashboardProps {
   userName: string;
-  defaultFacility?: {
-    name?: string;
-    address?: string;
-    phone?: string;
-    department?: string;
-    physician?: string;
-    zip?: string;
-  };
+  defaultFacility?: FacilityDefaults;
+  defaultRequester?: RequesterDefaults;
 }
 
-export function ProviderDashboard({ userName, defaultFacility }: ProviderDashboardProps) {
+export function ProviderDashboard({
+  userName,
+  defaultFacility,
+  defaultRequester,
+}: ProviderDashboardProps) {
   const [requests, setRequests] = useState<RequestData[]>([]);
   const [favorites, setFavorites] = useState<{ id: string }[]>([]);
   const [companies, setCompanies] = useState<{ id: string; name: string; products: string[] }[]>([]);
@@ -153,6 +152,7 @@ export function ProviderDashboard({ userName, defaultFacility }: ProviderDashboa
         <RequestRepModal
           companies={companies}
           defaultFacility={defaultFacility}
+          defaultRequester={defaultRequester}
           onClose={() => setShowModal(false)}
           onSuccess={loadData}
         />

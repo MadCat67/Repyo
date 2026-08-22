@@ -68,9 +68,10 @@ model User {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  providerRequests ServiceRequest[] @relation("ProviderRequests")
-  assignedRequests ServiceRequest[] @relation("AssignedRepRequests")
-  adminRequests    ServiceRequest[] @relation("AdminRequests")
+  providerRequests   ServiceRequest[] @relation("ProviderRequests")
+  assignedRequests   ServiceRequest[] @relation("AssignedRepRequests")
+  adminRequests      ServiceRequest[] @relation("AdminRequests")
+  initiatedRequests  ServiceRequest[] @relation("RepInitiatedRequests")
   favoriteReps     FavoriteRep[]    @relation("ProviderFavorites")
   favoritedBy      FavoriteRep[]    @relation("RepFavorites")
   notifications    Notification[]
@@ -108,14 +109,23 @@ model Facility {
 }
 
 model ProviderProfile {
-  userId           String   @id
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  facilityName     String?
-  facilityAddress  String?
-  facilityPhone    String?
-  department       String?
-  defaultPhysician String?
-  zipCode          String?
+  userId              String   @id
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  facilityName        String?
+  facilityAddress     String?
+  facilityPhone       String?
+  facilityContactName String?
+  facilityContactPhone String?
+  department          String?
+  defaultPhysician    String?
+  zipCode             String?
+  requesterPhone      String?
+  requesterFax        String?
+}
+
+enum AvailabilityBlockType {
+  VACATION
+  OFF
 }
 
 model RepProfile {
@@ -134,7 +144,34 @@ model RepProfile {
   companies         String[]
   updatedAt         DateTime         @updatedAt
 
-  territories Territory[]
+  territories         Territory[]
+  scheduleRules       RepScheduleRule[]
+  availabilityBlocks  RepAvailabilityBlock[]
+}
+
+model RepScheduleRule {
+  id           String @id @default(uuid())
+  repProfileId String
+  dayOfWeek    Int
+  startTime    String
+  endTime      String
+
+  repProfile RepProfile @relation(fields: [repProfileId], references: [userId], onDelete: Cascade)
+
+  @@index([repProfileId])
+}
+
+model RepAvailabilityBlock {
+  id           String                @id @default(uuid())
+  repProfileId String
+  type         AvailabilityBlockType @default(VACATION)
+  startAt      DateTime
+  endAt        DateTime
+  note         String?
+
+  repProfile RepProfile @relation(fields: [repProfileId], references: [userId], onDelete: Cascade)
+
+  @@index([repProfileId, startAt, endAt])
 }
 
 model Territory {
@@ -153,41 +190,51 @@ model Territory {
 }
 
 model ServiceRequest {
-  id              String         @id @default(uuid())
-  providerId      String
-  companyId       String
-  assignedAdminId String?
-  assignedRepId   String?
-  facilityName    String
-  facilityAddr    String
-  facilityPhone   String?
-  facilityLat     Float?
-  facilityLng     Float?
-  facilityZipCode String?
-  department      String
-  physicianName   String
-  patientNameEnc  String
-  patientDOBEnc   String
-  procedureType   String
-  requestType     RequestType    @default(CASE)
-  product         String?
-  urgency         RequestUrgency
-  scheduledAt     DateTime
-  status          RequestStatus  @default(REQUESTING)
-  notes           String?
-  repLat          Float?
-  repLng          Float?
-  etaMinutes      Int?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                   String         @id @default(uuid())
+  providerId           String?
+  initiatedByRepId     String?
+  companyId            String
+  assignedAdminId      String?
+  assignedRepId        String?
+  facilityName         String
+  facilityAddr         String
+  facilityPhone        String?
+  facilityContactName  String?
+  facilityContactPhone String?
+  facilityLat          Float?
+  facilityLng          Float?
+  facilityZipCode      String?
+  department           String?
+  requesterName        String?
+  requesterPhone       String?
+  requesterEmail       String?
+  requesterFax         String?
+  physicianName        String?
+  patientNameEnc       String?
+  patientDOBEnc        String?
+  patientRoomEnc       String?
+  procedureType        String?
+  requestType          RequestType    @default(CASE)
+  product              String?
+  urgency              RequestUrgency
+  scheduledAt          DateTime
+  status               RequestStatus  @default(REQUESTING)
+  notes                String?
+  repLat               Float?
+  repLng               Float?
+  etaMinutes           Int?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  provider      User     @relation("ProviderRequests", fields: [providerId], references: [id])
-  assignedAdmin User?    @relation("AdminRequests", fields: [assignedAdminId], references: [id])
-  company       Company  @relation(fields: [companyId], references: [id])
-  assignedRep   User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
-  statusLogs    RequestStatusLog[]
+  provider       User?    @relation("ProviderRequests", fields: [providerId], references: [id])
+  initiatedByRep User?    @relation("RepInitiatedRequests", fields: [initiatedByRepId], references: [id])
+  assignedAdmin  User?    @relation("AdminRequests", fields: [assignedAdminId], references: [id])
+  company        Company  @relation(fields: [companyId], references: [id])
+  assignedRep    User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
+  statusLogs     RequestStatusLog[]
 
   @@index([providerId])
+  @@index([initiatedByRepId])
   @@index([assignedAdminId])
   @@index([assignedRepId])
   @@index([status])

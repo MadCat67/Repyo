@@ -37,7 +37,7 @@ const NAV_CONFIG: Record<string, { title: string; items: NavItem[] }> = {
     title: "Rep App",
     items: [
       { href: "/rep", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
-      { href: "/rep/schedule", label: "Schedule", icon: <Stethoscope className="h-4 w-4" /> },
+      { href: "/rep/schedule", label: "Calendar", icon: <Stethoscope className="h-4 w-4" /> },
       { href: "/rep/territory", label: "Territory", icon: <MapPin className="h-4 w-4" /> },
     ],
   },

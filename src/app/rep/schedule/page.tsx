@@ -1,9 +1,9 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { RepSchedulePage } from "@/components/rep/rep-dashboard";
+import { RepCalendarPage } from "@/components/rep/rep-calendar";
 
 export default async function Page() {
   const session = await auth();
   if (!session?.user || session.user.role !== "REP") redirect("/login");
-  return <RepSchedulePage userName={session.user.name} />;
+  return <RepCalendarPage userName={session.user.name} />;
 }

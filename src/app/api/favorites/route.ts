@@ -22,6 +22,9 @@ export async function GET() {
               status: true,
               credentialStatus: true,
               products: true,
+              territories: {
+                select: { state: true, county: true, zipCode: true },
+              },
             },
           },
         },

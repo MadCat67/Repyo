@@ -6,7 +6,7 @@ import { RequestCard, type RequestData } from "@/components/shared/request-card"
 import { connectEventSource, fetchJson } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
-import { cn, PROCEDURE_TYPES, REP_STATUS_LABELS } from "@/lib/utils";
+import { cn, PROCEDURE_TYPES, QUALIFIED_STATUS_LABELS, REP_STATUS_LABELS } from "@/lib/utils";
 import { Plus, X } from "lucide-react";
 
 interface Rep {
@@ -22,7 +22,7 @@ interface Rep {
   } | null;
 }
 
-const CRED_STATUSES = ["ACTIVE", "PENDING", "EXPIRED", "REVOKED"] as const;
+const QUALIFIED_STATUSES = ["ACTIVE", "PENDING", "EXPIRED", "REVOKED"] as const;
 
 const REQUEST_TABS = ["all", "active", "completed", "cancelled"] as const;
 
@@ -253,7 +253,7 @@ export function CompanyRepsPage({
 
   useEffect(() => { load(); }, [load]);
 
-  async function updateCredential(repId: string, credentialStatus: string) {
+  async function updateQualifiedStatus(repId: string, credentialStatus: string) {
     try {
       await fetchJson(`/api/company/reps/${repId}`, {
         method: "PATCH",
@@ -262,7 +262,7 @@ export function CompanyRepsPage({
       });
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update credential");
+      setError(err instanceof Error ? err.message : "Failed to update qualification status");
     }
   }
 
@@ -300,7 +300,7 @@ export function CompanyRepsPage({
               <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase text-slate-500">
                 <th className="px-4 py-3">Rep</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Credential</th>
+                <th className="px-4 py-3">Qualified</th>
                 <th className="px-4 py-3">Territories</th>
                 <th className="px-4 py-3">Products</th>
               </tr>
@@ -327,11 +327,13 @@ export function CompanyRepsPage({
                     <td className="px-4 py-3">
                       <select
                         value={rep.repProfile?.credentialStatus ?? "PENDING"}
-                        onChange={(e) => updateCredential(rep.id, e.target.value)}
+                        onChange={(e) => updateQualifiedStatus(rep.id, e.target.value)}
                         className="rounded-lg border border-slate-200 px-2 py-1 text-xs"
                       >
-                        {CRED_STATUSES.map((s) => (
-                          <option key={s} value={s}>{s}</option>
+                        {QUALIFIED_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {QUALIFIED_STATUS_LABELS[s] ?? s}
+                          </option>
                         ))}
                       </select>
                     </td>
@@ -356,7 +358,7 @@ export function CompanyRepsPage({
           onClose={() => setShowAddModal(false)}
           onSuccess={(rep) => {
             setShowAddModal(false);
-            setSuccessMessage(`${rep.name} was added. Share their login credentials so they can sign in at /login.`);
+            setSuccessMessage(`${rep.name} was added. Share their login details so they can sign in at /login.`);
             load();
           }}
         />
@@ -450,10 +452,13 @@ function AddRepModal({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Select
-              label="Credential Status"
+              label="Qualification Status"
               name="credentialStatus"
               defaultValue="ACTIVE"
-              options={CRED_STATUSES.map((s) => ({ value: s, label: s }))}
+              options={QUALIFIED_STATUSES.map((s) => ({
+                value: s,
+                label: QUALIFIED_STATUS_LABELS[s] ?? s,
+              }))}
             />
             <Select
               label="Availability"
@@ -594,7 +599,7 @@ export function CompanyAnalyticsPage({ userName }: { userName: string }) {
               <dd className="font-medium text-rose-600">{data.coverage.availableReps}</dd>
             </div>
             <div className="flex justify-between text-sm">
-              <dt className="text-slate-500">Credentialed</dt>
+              <dt className="text-slate-500">Qualified</dt>
               <dd className="font-medium">{data.coverage.credentialedReps}</dd>
             </div>
           </dl>

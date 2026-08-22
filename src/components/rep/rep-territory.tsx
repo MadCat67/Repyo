@@ -17,9 +17,6 @@ interface Territory {
 interface RepProfile {
   status: string;
   travelRadiusMiles: number;
-  credentialStatus: string;
-  symplrMerged: boolean;
-  vendormateMerged: boolean;
   onCallEnabled: boolean;
   products: string[];
   territories: Territory[];
@@ -141,17 +138,13 @@ export function RepTerritoryPage({ userName }: { userName: string }) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-semibold text-slate-900">Credentialing</h2>
-          <dl className="mt-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Status</dt>
-              <dd className="font-medium">{profile.credentialStatus}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-slate-500">Availability</dt>
-              <dd className="font-medium">{REP_STATUS_LABELS[profile.status]}</dd>
-            </div>
-          </dl>
+          <h2 className="font-semibold text-slate-900">Current Status</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            {REP_STATUS_LABELS[profile.status] ?? profile.status}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Update your status and weekly hours on the Dashboard and Calendar pages.
+          </p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">

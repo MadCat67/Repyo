@@ -40,10 +40,18 @@ export async function GET(_request: Request, context: RouteContext) {
 
   return NextResponse.json({
     ...serviceRequest,
-    patientName: decryptPHI(serviceRequest.patientNameEnc),
-    patientDOB: decryptDate(serviceRequest.patientDOBEnc).toISOString(),
+    patientName: serviceRequest.patientNameEnc
+      ? decryptPHI(serviceRequest.patientNameEnc)
+      : null,
+    patientDOB: serviceRequest.patientDOBEnc
+      ? decryptDate(serviceRequest.patientDOBEnc).toISOString()
+      : null,
+    patientRoom: serviceRequest.patientRoomEnc
+      ? decryptPHI(serviceRequest.patientRoomEnc)
+      : null,
     patientNameEnc: undefined,
     patientDOBEnc: undefined,
+    patientRoomEnc: undefined,
   });
 }
 
@@ -114,22 +122,26 @@ export async function PATCH(request: Request, context: RouteContext) {
     });
 
     if (status === "ACCEPTED" || status === "EN_ROUTE") {
-      await tx.notification.create({
-        data: {
-          userId: existing.providerId,
-          title: `Request ${status === "ACCEPTED" ? "Accepted" : "En Route"}`,
-          body: `${session.user.name} updated request status to ${status.replace("_", " ").toLowerCase()}`,
-          type: "REQUEST_STATUS",
-          data: { requestId: id, status },
-        },
-      });
+      if (existing.providerId) {
+        await tx.notification.create({
+          data: {
+            userId: existing.providerId,
+            title: `Request ${status === "ACCEPTED" ? "Accepted" : "En Route"}`,
+            body: `${session.user.name} updated request status to ${status.replace("_", " ").toLowerCase()}`,
+            type: "REQUEST_STATUS",
+            data: { requestId: id, status },
+          },
+        });
+      }
     }
 
     return req;
   });
 
   realtimeBus.emit("request:updated", { requestId: id });
-  realtimeBus.emit(`user:${existing.providerId}`, { type: "REQUEST_STATUS", requestId: id });
+  if (existing.providerId) {
+    realtimeBus.emit(`user:${existing.providerId}`, { type: "REQUEST_STATUS", requestId: id });
+  }
 
   return NextResponse.json(updated);
 }
@@ -166,10 +178,14 @@ async function handleAssignRep(
     facilityLng: existing.facilityLng,
     facilityZip: existing.facilityZipCode,
     product: existing.product,
+    scheduledAt: existing.scheduledAt,
   });
 
   if (!result.assigned) {
-    return NextResponse.json({ error: "Rep not found or unavailable" }, { status: 400 });
+    return NextResponse.json(
+      { error: result.error ?? "Rep not found or unavailable" },
+      { status: 400 }
+    );
   }
 
   return NextResponse.json({ assigned: true, repName: result.repName });
