@@ -16,6 +16,7 @@ interface ProviderDashboardProps {
     phone?: string;
     department?: string;
     physician?: string;
+    zip?: string;
   };
 }
 
