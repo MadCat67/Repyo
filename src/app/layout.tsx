@@ -19,10 +19,11 @@ export const metadata: Metadata = {
     "HIPAA-compliant platform connecting healthcare providers with qualified medical device representatives.",
   icons: {
     icon: [
-      { url: "/icon.png", type: "image/png" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/icon.svg", type: "image/svg+xml" },
     ],
-    apple: [{ url: "/apple-icon.png", type: "image/png" }],
-    shortcut: ["/icon.png"],
+    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
+    shortcut: [{ url: "/icon.png", type: "image/png" }],
   },
 };
 

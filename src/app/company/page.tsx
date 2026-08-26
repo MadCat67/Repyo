@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { PortalShell } from "@/components/layout/portal-shell";
+import { SalesforceConnectPanel } from "@/components/company/salesforce-connect-panel";
 import { redirect } from "next/navigation";
 import { Users, Clock, MapPin, Activity, ArrowRight } from "lucide-react";
 
@@ -82,6 +84,10 @@ export default async function CompanyPage() {
           </Link>
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <SalesforceConnectPanel />
+      </Suspense>
     </PortalShell>
   );
 }

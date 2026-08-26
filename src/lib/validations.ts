@@ -37,6 +37,10 @@ export const createRequestSchema = z
     preferredRepId: z.string().uuid().optional(),
     repInitiated: z.boolean().optional(),
     assignRepId: z.string().uuid().optional(),
+    deviceManufacturer: z.string().optional(),
+    deviceName: z.string().optional(),
+    deviceSerial: z.string().optional(),
+    salesforceRecordId: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.requestType === "CASE") {
@@ -74,6 +78,21 @@ export const createRequestSchema = z
         message: "Appointment details are required",
         path: ["notes"],
       });
+    } else {
+      if (!data.patientName?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Patient name is required",
+          path: ["patientName"],
+        });
+      }
+      if (!data.patientDOB?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Patient date of birth is required",
+          path: ["patientDOB"],
+        });
+      }
     }
 
     if (data.repInitiated && !data.assignRepId && !data.preferredRepId) {
@@ -83,7 +102,27 @@ export const createRequestSchema = z
         path: ["assignRepId"],
       });
     }
+
+    if (!data.deviceManufacturer?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Device manufacturer is required",
+        path: ["deviceManufacturer"],
+      });
+    }
   });
+
+export const deviceLookupSchema = z.object({
+  patientName: z.string().min(1, "Patient name is required"),
+  patientDOB: z
+    .string()
+    .min(1, "Patient date of birth is required")
+    .refine(
+      (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isNaN(Date.parse(v)),
+      "Invalid date"
+    ),
+  manufacturer: z.string().min(1, "Manufacturer is required"),
+});
 
 export const updateRequestStatusSchema = z.object({
   status: z.enum([

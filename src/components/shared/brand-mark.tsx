@@ -1,11 +1,18 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-const iconSizes = {
-  sm: 24,
-  md: 32,
-  lg: 40,
-  xl: 48,
+const boxSizes = {
+  sm: "h-8 w-8 p-1.5",
+  md: "h-10 w-10 p-2",
+  lg: "h-12 w-12 p-2.5",
+  xl: "h-14 w-14 p-3",
+};
+
+const textSizes = {
+  sm: "text-lg",
+  md: "text-2xl",
+  lg: "text-3xl",
+  xl: "text-4xl sm:text-5xl",
 };
 
 export function BrandMark({
@@ -17,32 +24,30 @@ export function BrandMark({
   size?: "sm" | "md" | "lg" | "xl";
   showIcon?: boolean;
 }) {
-  const sizes = {
-    sm: "text-lg",
-    md: "text-2xl",
-    lg: "text-3xl",
-    xl: "text-4xl sm:text-5xl",
-  };
-
-  const px = iconSizes[size];
-
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 font-bold tracking-tight",
-        sizes[size],
+        "inline-flex items-center gap-3 font-bold tracking-tight",
+        textSizes[size],
         className
       )}
     >
       {showIcon && (
-        <Image
-          src="/icon.png"
-          alt="GoRepYo"
-          width={px}
-          height={px}
-          className="shrink-0 rounded-lg"
-          priority
-        />
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center rounded-xl bg-rose-600",
+            boxSizes[size]
+          )}
+        >
+          <Image
+            src="/icon.png"
+            alt="GoRepYo"
+            width={64}
+            height={64}
+            className="h-full w-full object-contain"
+            priority
+          />
+        </span>
       )}
       <span>
         <span className="text-rose-600">Go</span>

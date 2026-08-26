@@ -4,7 +4,7 @@ import { StatusBadge, UrgencyBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusPipeline } from "@/components/shared/status-pipeline";
 import { format } from "date-fns";
-import { Heart, MapPin, Phone, User, X } from "lucide-react";
+import { Heart, MapPin, Phone, User, X, Cpu } from "lucide-react";
 import { useState } from "react";
 
 export interface RequestData {
@@ -28,6 +28,10 @@ export interface RequestData {
   initiatedByRep?: { id: string; name: string; phone: string | null } | null;
   requesterName?: string | null;
   company?: { name: string } | null;
+  deviceManufacturer?: string | null;
+  deviceName?: string | null;
+  deviceSerial?: string | null;
+  crmLookupStatus?: string | null;
   statusLogs?: { status: string; createdAt: string; note?: string | null }[];
 }
 
@@ -110,6 +114,26 @@ export function RequestCard({
             {request.notes && (
               <p className="mt-2 text-sm text-slate-600">{request.notes}</p>
             )}
+            {(request.deviceManufacturer || request.deviceName) &&
+              (role === "rep" || role === "company") && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Cpu className="h-4 w-4 shrink-0 text-rose-500" />
+                    <span className="font-medium">Device (CRM)</span>
+                  </div>
+                  {request.deviceManufacturer && (
+                    <p className="mt-1 text-xs text-slate-600">
+                      Manufacturer: {request.deviceManufacturer}
+                    </p>
+                  )}
+                  {request.deviceName && (
+                    <p className="text-xs text-slate-800">{request.deviceName}</p>
+                  )}
+                  {request.deviceSerial && (
+                    <p className="text-xs text-slate-500">Serial: {request.deviceSerial}</p>
+                  )}
+                </div>
+              )}
           </div>
         )}
 

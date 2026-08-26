@@ -79,12 +79,14 @@ async function main() {
     where: { slug: "medtronic" },
     update: {
       products: ["PPM", "ICD", "CRT-D", "CRT-P", "Loop", "Leadless PPM"],
+      manufacturerAliases: ["Medtronic Inc", "MDT"],
       active: true,
     },
     create: {
       name: "Medtronic",
       slug: "medtronic",
       products: ["PPM", "ICD", "CRT-D", "CRT-P", "Loop", "Leadless PPM"],
+      manufacturerAliases: ["Medtronic Inc", "MDT"],
     },
   });
 
@@ -92,12 +94,14 @@ async function main() {
     where: { slug: "boston-scientific" },
     update: {
       products: ["Watchman", "ICD", "CRT-D", "Ablation"],
+      manufacturerAliases: ["Boston Sci", "BSX"],
       active: true,
     },
     create: {
       name: "Boston Scientific",
       slug: "boston-scientific",
       products: ["Watchman", "ICD", "CRT-D", "Ablation"],
+      manufacturerAliases: ["Boston Sci", "BSX"],
     },
   });
 

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { encryptPHI, encryptDate, decryptPHI, decryptDate } from "@/lib/encryption";
 import { getDelegatedAdminIdsForRep } from "@/lib/admin-matching";
 import { assignRepToRequest, findEligibleReps } from "@/lib/routing-engine";
+import { createSalesforceCase, findCompanyByManufacturer, lookupPatientDevice } from "@/lib/salesforce";
 import { createRequestSchema } from "@/lib/validations";
 import { RequestUrgency } from "@prisma/client";
 import { NextResponse } from "next/server";
@@ -66,6 +67,8 @@ export async function GET() {
         patientNameEnc: undefined,
         patientDOBEnc: undefined,
         patientRoomEnc: undefined,
+        deviceNameEnc: undefined,
+        deviceSerialEnc: undefined,
       };
 
       if (session.user.role === "PROVIDER") {
@@ -76,6 +79,16 @@ export async function GET() {
             ? decryptDate(r.patientDOBEnc).toISOString()
             : null,
           patientRoom: r.patientRoomEnc ? decryptPHI(r.patientRoomEnc) : null,
+        };
+      }
+
+      if (["REP", "COMPANY_ADMIN"].includes(session.user.role)) {
+        return {
+          ...base,
+          deviceManufacturer: r.deviceManufacturer,
+          deviceName: r.deviceNameEnc ? decryptPHI(r.deviceNameEnc) : null,
+          deviceSerial: r.deviceSerialEnc ? decryptPHI(r.deviceSerialEnc) : null,
+          crmLookupStatus: r.crmLookupStatus,
         };
       }
 
@@ -117,6 +130,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    let companyId = data.companyId;
+    if (data.deviceManufacturer) {
+      const manufacturerMatch = await findCompanyByManufacturer(data.deviceManufacturer);
+      if (manufacturerMatch && manufacturerMatch.id !== companyId) {
+        companyId = manufacturerMatch.id;
+      }
+    }
+
+    let deviceName = data.deviceName;
+    let deviceSerial = data.deviceSerial;
+    let salesforceRecordId = data.salesforceRecordId;
+    let crmLookupStatus = data.deviceName ? "FOUND" : "SKIPPED";
+
+    if (
+      data.deviceManufacturer &&
+      data.patientName &&
+      data.patientDOB &&
+      !deviceName
+    ) {
+      const lookup = await lookupPatientDevice({
+        patientName: data.patientName,
+        patientDOB: data.patientDOB.slice(0, 10),
+        manufacturer: data.deviceManufacturer,
+      });
+      crmLookupStatus = lookup.status;
+      if (lookup.companyId) companyId = lookup.companyId;
+      if (lookup.device) {
+        deviceName = lookup.device.deviceName;
+        deviceSerial = lookup.device.serialNumber;
+        salesforceRecordId = lookup.salesforceRecordId ?? lookup.device.id;
+      }
+    }
+
     const dob =
       data.patientDOB && data.patientDOB.length === 10
         ? new Date(`${data.patientDOB}T00:00:00.000Z`)
@@ -132,7 +178,7 @@ export async function POST(request: Request) {
         : null;
 
     const zipCode = data.facilityZipCode.slice(0, 5);
-    const matchedAdmin = await findMatchingAdmin(data.companyId, zipCode);
+    const matchedAdmin = await findMatchingAdmin(companyId, zipCode);
 
     const urgency: RequestUrgency =
       data.urgency ??
@@ -151,12 +197,12 @@ export async function POST(request: Request) {
 
     const scheduledAt = new Date(data.scheduledAt);
     const routingCriteria = {
-      companyId: data.companyId,
+      companyId,
       facilityName: data.facilityName,
       facilityLat: data.facilityLat,
       facilityLng: data.facilityLng,
       facilityZip: zipCode,
-      product: data.product,
+      product: data.product ?? deviceName,
       scheduledAt,
     };
 
@@ -180,7 +226,7 @@ export async function POST(request: Request) {
       data: {
         providerId: session.user.role === "PROVIDER" ? session.user.id : null,
         initiatedByRepId: isRepInitiated ? session.user.id : null,
-        companyId: data.companyId,
+        companyId,
         assignedAdminId: matchedAdmin?.id ?? null,
         assignedRepId: assignRepId,
         facilityName: data.facilityName,
@@ -199,9 +245,14 @@ export async function POST(request: Request) {
         patientNameEnc: data.patientName ? encryptPHI(data.patientName) : null,
         patientDOBEnc: dob ? encryptDate(dob) : null,
         patientRoomEnc: data.patientRoom ? encryptPHI(data.patientRoom) : null,
-        procedureType: data.procedureType ?? null,
+        deviceManufacturer: data.deviceManufacturer,
+        deviceNameEnc: deviceName ? encryptPHI(deviceName) : null,
+        deviceSerialEnc: deviceSerial ? encryptPHI(deviceSerial) : null,
+        salesforceRecordId: salesforceRecordId ?? null,
+        crmLookupStatus,
+        procedureType: data.procedureType ?? deviceName ?? null,
         requestType: data.requestType,
-        product: data.product,
+        product: data.product ?? deviceName ?? null,
         urgency,
         scheduledAt,
         notes: data.notes,
@@ -221,11 +272,36 @@ export async function POST(request: Request) {
         status: serviceRequest.status,
         note:
           repNote ??
-          (matchedAdmin
-            ? `Routed to admin ${matchedAdmin.name} for zip ${zipCode}`
-            : "Request submitted — awaiting admin assignment"),
+          (crmLookupStatus === "FOUND" && deviceName
+            ? `CRM matched ${deviceName}${deviceSerial ? ` (${deviceSerial})` : ""}`
+            : matchedAdmin
+              ? `Routed to admin ${matchedAdmin.name} for zip ${zipCode}`
+              : "Request submitted — awaiting admin assignment"),
       },
     });
+
+    const salesforceCaseId = await createSalesforceCase({
+      companyId,
+      requestId: serviceRequest.id,
+      subject: `GoRepYo request — ${data.facilityName}`,
+      description: [
+        `Request ID: ${serviceRequest.id}`,
+        `Patient: ${data.patientName ?? "N/A"}`,
+        `Manufacturer: ${data.deviceManufacturer ?? "N/A"}`,
+        deviceName ? `Device: ${deviceName}` : null,
+        deviceSerial ? `Serial: ${deviceSerial}` : null,
+        `Scheduled: ${scheduledAt.toISOString()}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+
+    if (salesforceCaseId) {
+      await db.serviceRequest.update({
+        where: { id: serviceRequest.id },
+        data: { salesforceCaseId },
+      });
+    }
 
     if (providerProfile && session.user.role === "PROVIDER") {
       await db.providerProfile.update({

@@ -118,6 +118,14 @@ export function RequestRepModal({
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [scheduledTime, setScheduledTime] = useState("09:00");
+  const [patientName, setPatientName] = useState("");
+  const [patientDOB, setPatientDOB] = useState("");
+  const [deviceManufacturer, setDeviceManufacturer] = useState("");
+  const [crmLoading, setCrmLoading] = useState(false);
+  const [crmMessage, setCrmMessage] = useState("");
+  const [deviceName, setDeviceName] = useState("");
+  const [deviceSerial, setDeviceSerial] = useState("");
+  const [salesforceRecordId, setSalesforceRecordId] = useState("");
 
   const company = companies.find((c) => c.id === selectedCompany);
   const isProcedure = requestKind === "procedure";
@@ -248,6 +256,60 @@ export function RequestRepModal({
     [availableReps, favoriteIds]
   );
 
+  async function lookupDeviceInCrm() {
+    if (!patientName.trim() || !patientDOB || !deviceManufacturer.trim()) {
+      setCrmMessage("Enter patient name, date of birth, and manufacturer first.");
+      return;
+    }
+
+    setCrmLoading(true);
+    setCrmMessage("");
+    setDeviceName("");
+    setDeviceSerial("");
+    setSalesforceRecordId("");
+
+    try {
+      const result = await fetchJson<{
+        status: string;
+        companyId?: string;
+        companyName?: string;
+        message?: string;
+        device?: { deviceName: string; serialNumber: string; product?: string };
+        salesforceRecordId?: string;
+      }>("/api/crm/device-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientName: patientName.trim(),
+          patientDOB,
+          manufacturer: deviceManufacturer.trim(),
+        }),
+      });
+
+      if (result.companyId) {
+        setSelectedCompany(result.companyId);
+        if (!isRepMode) setSelectedRepId(null);
+      }
+
+      if (result.device) {
+        setDeviceName(result.device.deviceName);
+        setDeviceSerial(result.device.serialNumber);
+        setSalesforceRecordId(result.salesforceRecordId ?? "");
+        if (result.device.product) setSelectedProduct(result.device.product);
+      }
+
+      setCrmMessage(
+        result.status === "FOUND"
+          ? `Matched ${result.companyName}: ${result.device?.deviceName ?? "device found"}`
+          : result.message ?? "No device found in CRM"
+      );
+    } catch (err) {
+      setCrmMessage(err instanceof Error ? err.message : "CRM lookup failed");
+    } finally {
+      setCrmLoading(false);
+    }
+  }
+
   function deriveUrgency(date: string, time: string) {
     const scheduledAt = new Date(`${date}T${time}`);
     const today = new Date();
@@ -287,9 +349,13 @@ export function RequestRepModal({
       procedureType: isProcedure
         ? form.get("procedureType")
         : form.get("appointmentDetails") || undefined,
-      patientName: isProcedure ? form.get("patientName") : undefined,
-      patientDOB: isProcedure ? form.get("patientDOB") : undefined,
+      patientName: patientName.trim(),
+      patientDOB,
       patientRoom: isProcedure ? form.get("patientRoom") : undefined,
+      deviceManufacturer: deviceManufacturer.trim(),
+      deviceName: deviceName || undefined,
+      deviceSerial: deviceSerial || undefined,
+      salesforceRecordId: salesforceRecordId || undefined,
       product: selectedProduct || undefined,
       urgency: deriveUrgency(scheduledDate, scheduledTime),
       scheduledAt: new Date(`${scheduledDate}T${scheduledTime}`).toISOString(),
@@ -527,17 +593,67 @@ export function RequestRepModal({
               ))}
             </div>
 
+            <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-4 space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">
+                  Patient & Device Lookup
+                </h4>
+                <p className="mt-1 text-xs text-slate-600">
+                  We route this to the matching manufacturer&apos;s Salesforce CRM to
+                  find the implanted device, then send the request to their rep team.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label="Patient Name"
+                  name="patientNameField"
+                  value={patientName}
+                  onChange={(e) => setPatientName(e.target.value)}
+                  required
+                />
+                <Input
+                  label="Date of Birth"
+                  name="patientDOBField"
+                  type="date"
+                  value={patientDOB}
+                  onChange={(e) => setPatientDOB(e.target.value)}
+                  required
+                />
+              </div>
+              <Input
+                label="Device Manufacturer"
+                name="deviceManufacturerField"
+                value={deviceManufacturer}
+                onChange={(e) => setDeviceManufacturer(e.target.value)}
+                placeholder="e.g. Medtronic, Boston Scientific"
+                required
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={lookupDeviceInCrm}
+                  disabled={crmLoading}
+                >
+                  {crmLoading ? "Looking up..." : "Look Up Device in CRM"}
+                </Button>
+                {crmMessage && (
+                  <p className="text-xs text-slate-600">{crmMessage}</p>
+                )}
+              </div>
+              {(deviceName || deviceSerial) && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                  {deviceName && <p className="font-medium">{deviceName}</p>}
+                  {deviceSerial && (
+                    <p className="text-xs text-emerald-800">Serial: {deviceSerial}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {isProcedure ? (
               <>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Patient Info (Encrypted)
-                  </p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input label="Patient Name" name="patientName" required />
-                  <Input label="Date of Birth" name="patientDOB" type="date" required />
-                </div>
                 <Input label="Room Number" name="patientRoom" required />
                 <Select
                   label="Procedure Type"
