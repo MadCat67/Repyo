@@ -1,11 +1,11 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-const boxSizes = {
-  sm: "h-8 w-8 p-1.5",
-  md: "h-10 w-10 p-2",
-  lg: "h-12 w-12 p-2.5",
-  xl: "h-14 w-14 p-3",
+const iconSizes = {
+  sm: "h-8 w-8",
+  md: "h-10 w-10",
+  lg: "h-12 w-12",
+  xl: "h-14 w-14",
 };
 
 const textSizes = {
@@ -33,21 +33,14 @@ export function BrandMark({
       )}
     >
       {showIcon && (
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center justify-center rounded-xl bg-rose-600",
-            boxSizes[size]
-          )}
-        >
-          <Image
-            src="/icon.png"
-            alt="GoRepYo"
-            width={64}
-            height={64}
-            className="h-full w-full object-contain"
-            priority
-          />
-        </span>
+        <Image
+          src="/icon.png"
+          alt="GoRepYo"
+          width={64}
+          height={64}
+          className={cn("shrink-0 rounded-xl object-contain", iconSizes[size])}
+          priority
+        />
       )}
       <span>
         <span className="text-rose-600">Go</span>
