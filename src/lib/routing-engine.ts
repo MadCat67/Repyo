@@ -66,6 +66,14 @@ function repCoversTerritory(
     if (criteria.facilityState && t.state === criteria.facilityState)
       return true;
     if (criteria.facilityZip && t.zipCode === criteria.facilityZip) return true;
+    if (
+      criteria.facilityZip &&
+      t.zipCode &&
+      criteria.facilityZip.length >= 3 &&
+      t.zipCode.slice(0, 3) === criteria.facilityZip.slice(0, 3)
+    ) {
+      return true;
+    }
     return false;
   });
 }

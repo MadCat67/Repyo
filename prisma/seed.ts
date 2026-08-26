@@ -155,7 +155,7 @@ async function main() {
           facilityContactPhone: "(602) 555-0100",
           department: "EP Lab",
           defaultPhysician: "Dr. Sarah Chen",
-          zipCode: "85044",
+          zipCode: "85004",
           requesterPhone: "(602) 555-0101",
           requesterFax: "(602) 555-0199",
         },

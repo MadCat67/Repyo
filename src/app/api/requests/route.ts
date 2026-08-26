@@ -191,10 +191,6 @@ export async function POST(request: Request) {
         return day.getTime() === today.getTime() ? "ASAP" : "SCHEDULED";
       })();
 
-    const assignRepId = isRepInitiated
-      ? data.assignRepId ?? data.preferredRepId ?? null
-      : data.preferredRepId ?? null;
-
     const scheduledAt = new Date(data.scheduledAt);
     const routingCriteria = {
       companyId,
@@ -205,6 +201,16 @@ export async function POST(request: Request) {
       product: data.product ?? deviceName,
       scheduledAt,
     };
+
+    let assignRepId = isRepInitiated
+      ? data.assignRepId ?? data.preferredRepId ?? null
+      : data.preferredRepId ?? null;
+
+    // Auto-assign closest available rep when provider did not pick one
+    if (!assignRepId && !isRepInitiated) {
+      const eligible = await findEligibleReps(routingCriteria);
+      assignRepId = eligible[0]?.userId ?? null;
+    }
 
     if (assignRepId) {
       const eligible = await findEligibleReps({
@@ -256,14 +262,17 @@ export async function POST(request: Request) {
         urgency,
         scheduledAt,
         notes: data.notes,
-        status: isRepInitiated && assignRepId ? "ACCEPTED" : "REQUESTING",
+        status: assignRepId ? "ACCEPTED" : "REQUESTING",
       },
     });
 
+    const autoAssigned = !data.preferredRepId && !data.assignRepId && assignRepId;
     const repNote = assignRepId
       ? isRepInitiated
         ? "Rep-initiated request assigned on creation"
-        : "Provider requested a specific rep"
+        : autoAssigned
+          ? "Auto-assigned to closest available rep"
+          : "Provider requested a specific rep"
       : null;
 
     await db.requestStatusLog.create({

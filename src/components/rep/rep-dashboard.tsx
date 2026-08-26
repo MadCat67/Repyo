@@ -58,9 +58,13 @@ export function RepDashboard({
     return () => es.close();
   }, [loadData]);
 
-  const adminRequests = requests.filter((r) => r.status === "REQUESTING");
-  const fieldRequests = requests.filter((r) =>
-    ["ACCEPTED", "EN_ROUTE", "ARRIVED"].includes(r.status)
+  const adminRequests = requests.filter(
+    (r) => r.status === "REQUESTING" && r.assignedRep?.id !== userId
+  );
+  const fieldRequests = requests.filter(
+    (r) =>
+      ["ACCEPTED", "EN_ROUTE", "ARRIVED"].includes(r.status) ||
+      (r.status === "REQUESTING" && r.assignedRep?.id === userId)
   );
 
   useEffect(() => {

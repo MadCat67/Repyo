@@ -224,6 +224,15 @@ export function RequestCard({
 
         {role === "rep" &&
           request.assignedRep &&
+          request.status === "REQUESTING" &&
+          onAction && (
+            <Button size="sm" onClick={() => onAction("ACCEPTED", request.id)}>
+              Accept Request
+            </Button>
+          )}
+
+        {role === "rep" &&
+          request.assignedRep &&
           request.status === "ACCEPTED" &&
           onAction && (
             <Button size="sm" onClick={() => onAction("EN_ROUTE", request.id)}>
