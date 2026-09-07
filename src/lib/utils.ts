@@ -53,6 +53,7 @@ export const REQUEST_STATUS_LABELS: Record<string, string> = {
   ARRIVED: "Arrived",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
+  DECLINED: "Declined",
 };
 
 export const REP_STATUS_LABELS: Record<string, string> = {

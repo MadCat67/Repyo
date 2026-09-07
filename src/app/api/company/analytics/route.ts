@@ -64,12 +64,29 @@ export async function GET() {
   const availableReps = reps.filter((r) => r.status === "AVAILABLE").length;
   const credentialedReps = reps.filter((r) => r.credentialStatus === "ACTIVE").length;
 
+  const forwards = await db.requestForward.findMany({
+    where: { request: { companyId } },
+    include: {
+      originalRep: { select: { id: true, name: true } },
+      forwardedTo: { select: { id: true, name: true } },
+    },
+    orderBy: { forwardTimestamp: "desc" },
+    take: 500,
+  });
+
+  const forwardPairs: Record<string, number> = {};
+  for (const forward of forwards) {
+    const key = `${forward.originalRep.name} → ${forward.forwardedTo.name}`;
+    forwardPairs[key] = (forwardPairs[key] ?? 0) + 1;
+  }
+
   return NextResponse.json({
     totals: {
       all: requests.length,
       active: active.length,
       completed: completed.length,
       cancelled: cancelled.length,
+      forwards: forwards.length,
     },
     avgResponseMinutes,
     byProcedure: Object.entries(byProcedure)
@@ -81,5 +98,9 @@ export async function GET() {
       availableReps,
       credentialedReps,
     },
+    forwardRoutes: Object.entries(forwardPairs)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([route, count]) => ({ route, count })),
   });
 }

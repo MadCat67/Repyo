@@ -14,6 +14,8 @@ type RawRequest = {
   initiatedByRepId: string | null;
   companyId: string;
   status: RequestStatus;
+  acknowledgedAt?: Date | null;
+  alertActive?: boolean;
   facilityName: string;
   facilityAddr: string;
   facilityZipCode: string | null;
@@ -52,7 +54,9 @@ export function sanitizeRequestForUser(
   const phiAllowed = canViewRequestPhi(user, request, options);
   const deviceAllowed = canViewDeviceIdentifiers(user, request, options);
   const isPreAcceptance =
-    request.status === "REQUESTING" && user.role !== "PROVIDER";
+    request.status === "REQUESTING" &&
+    user.role !== "PROVIDER" &&
+    !request.acknowledgedAt;
 
   const sanitized = {
     ...base,
@@ -63,6 +67,8 @@ export function sanitizeRequestForUser(
     deviceSerialEnc: undefined,
     phiRestricted: !phiAllowed,
     identifiersHidden: isPreAcceptance && user.role !== "PROVIDER",
+    acknowledgedAt: request.acknowledgedAt?.toISOString?.() ?? request.acknowledgedAt ?? null,
+    alertActive: request.alertActive ?? false,
   };
 
   if (phiAllowed) {
@@ -90,7 +96,7 @@ export function sanitizeRequestForUser(
   if (isPreAcceptance && user.role === "REP") {
     return {
       ...sanitized,
-      notes: sanitized.notes ? "[Details available after acceptance]" : null,
+      notes: sanitized.notes ? "[Open request to view details]" : null,
       requesterName: undefined,
       requesterPhone: undefined,
       requesterEmail: undefined,

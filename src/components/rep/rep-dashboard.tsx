@@ -10,6 +10,7 @@ import { REP_STATUS_LABELS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Plus, UserPlus } from "lucide-react";
 import { InviteModal } from "@/components/invitations/invite-modal";
+import { ForwardRequestModal } from "@/components/shared/forward-request-modal";
 
 const REP_STATUSES = ["AVAILABLE", "BUSY", "OFF_DUTY", "VACATION"] as const;
 
@@ -31,6 +32,7 @@ export function RepDashboard({
   const [companies, setCompanies] = useState<{ id: string; name: string; products: string[] }[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [forwardRequestId, setForwardRequestId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -109,12 +111,25 @@ export function RepDashboard({
   }
 
   async function handleAction(action: string, requestId: string) {
+    if (action === "FORWARD") {
+      setForwardRequestId(requestId);
+      return;
+    }
+
     try {
-      await fetchJson(`/api/requests/${requestId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: action }),
-      });
+      if (action === "DECLINE") {
+        await fetchJson(`/api/requests/${requestId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "DECLINE" }),
+        });
+      } else {
+        await fetchJson(`/api/requests/${requestId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: action }),
+        });
+      }
       loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
@@ -219,7 +234,14 @@ export function RepDashboard({
           <h2 className="mb-3 text-sm font-semibold uppercase text-red-600">ASAP Requests</h2>
           <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
             {urgent.map((req) => (
-              <RequestCard key={req.id} request={req} role="rep" onAction={handleAction} />
+              <RequestCard
+                key={req.id}
+                request={req}
+                role="rep"
+                currentUserId={userId}
+                onAction={handleAction}
+                onRefresh={loadData}
+              />
             ))}
           </div>
         </section>
@@ -241,7 +263,14 @@ export function RepDashboard({
         ) : (
           <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
             {fieldRequests.map((req) => (
-              <RequestCard key={req.id} request={req} role="rep" onAction={handleAction} />
+              <RequestCard
+                key={req.id}
+                request={req}
+                role="rep"
+                currentUserId={userId}
+                onAction={handleAction}
+                onRefresh={loadData}
+              />
             ))}
           </div>
         )}
@@ -249,6 +278,14 @@ export function RepDashboard({
 
       {showInviteModal && (
         <InviteModal onClose={() => setShowInviteModal(false)} />
+      )}
+
+      {forwardRequestId && (
+        <ForwardRequestModal
+          requestId={forwardRequestId}
+          onClose={() => setForwardRequestId(null)}
+          onSuccess={loadData}
+        />
       )}
 
       {showCreateModal && companies.length > 0 && (

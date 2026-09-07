@@ -17,7 +17,13 @@ import {
   toSessionUser,
 } from "@/lib/security/sanitize-request";
 import { canAccessRequestRecord } from "@/lib/security/authorization";
-import { assignRepSchema, updateRequestStatusSchema } from "@/lib/validations";
+import { assignRepSchema, updateRequestStatusSchema, forwardRequestSchema, declineRequestSchema } from "@/lib/validations";
+import {
+  acknowledgeRequestOnOpen,
+  declineRequest,
+  forwardRequest,
+  markForwardAccepted,
+} from "@/lib/request-forwarding";
 import { NextResponse } from "next/server";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -67,6 +73,22 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const acknowledgedAt = await acknowledgeRequestOnOpen({
+    requestId: id,
+    userId: user.id,
+    userRole: user.role,
+    request: {
+      assignedRepId: serviceRequest.assignedRepId,
+      status: serviceRequest.status,
+      acknowledgedAt: serviceRequest.acknowledgedAt,
+      companyId: serviceRequest.companyId,
+    },
+  });
+
+  const requestForSanitize = acknowledgedAt
+    ? { ...serviceRequest, acknowledgedAt }
+    : serviceRequest;
+
   const isDelegatedAdmin =
     user.role === "REP" &&
     Boolean(
@@ -74,7 +96,7 @@ export async function GET(_request: Request, context: RouteContext) {
         delegatedAdminIds.includes(serviceRequest.assignedAdminId)
     );
 
-  const sanitized = sanitizeRequestForUser(serviceRequest, user, {
+  const sanitized = sanitizeRequestForUser(requestForSanitize, user, {
     isDelegatedAdmin,
   });
 
@@ -134,6 +156,14 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const body = await request.json();
+
+  if (body.action === "FORWARD") {
+    return handleForward(sessionUser, id, body);
+  }
+
+  if (body.action === "DECLINE") {
+    return handleDecline(sessionUser, id, body);
+  }
 
   if (body.repId) {
     return handleAssignRep(sessionUser, id, body);
@@ -227,6 +257,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       actorRole: sessionUser.role,
       companyId: existing.companyId,
     });
+    if (sessionUser.role === "REP" && existing.assignedRepId === sessionUser.id) {
+      await markForwardAccepted(id, sessionUser.id);
+    }
   }
 
   realtimeBus.emit("request:updated", { requestId: id });
@@ -238,6 +271,62 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   return NextResponse.json(updated);
+}
+
+async function handleForward(
+  user: ReturnType<typeof toSessionUser>,
+  requestId: string,
+  body: unknown
+) {
+  const parsed = forwardRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+  }
+
+  if (user.role !== "REP") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const result = await forwardRequest({
+    requestId,
+    forwardedById: user.id,
+    forwardedToId: parsed.data.forwardedToId,
+    reason: parsed.data.reason,
+    targetTeamId: parsed.data.targetTeamId,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
+  }
+
+  return NextResponse.json({ forwarded: true });
+}
+
+async function handleDecline(
+  user: ReturnType<typeof toSessionUser>,
+  requestId: string,
+  body: unknown
+) {
+  const parsed = declineRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+  }
+
+  if (user.role !== "REP") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const result = await declineRequest({
+    requestId,
+    repId: user.id,
+    reason: parsed.data.reason,
+  });
+
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
+  }
+
+  return NextResponse.json({ declined: true });
 }
 
 async function handleAssignRep(

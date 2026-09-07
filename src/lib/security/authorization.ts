@@ -51,7 +51,7 @@ export function hasSecurityPermission(
   return (user.adminPermissions ?? []).includes(permission);
 }
 
-/** PHI visible to reps only after request is accepted and rep is properly matched. */
+/** PHI visible to reps after request is accepted, or after acknowledgment while still pending. */
 export function canViewRequestPhi(
   user: SessionUser,
   request: {
@@ -60,11 +60,24 @@ export function canViewRequestPhi(
     assignedAdminId: string | null;
     initiatedByRepId: string | null;
     status: RequestStatus;
+    acknowledgedAt?: Date | string | null;
   },
   options?: { isDelegatedAdmin?: boolean }
 ): boolean {
-  if (request.status === "REQUESTING" || request.status === "CANCELLED") {
+  if (request.status === "CANCELLED" || request.status === "DECLINED") {
     if (user.role === "PROVIDER" && request.providerId === user.id) return true;
+    return false;
+  }
+
+  if (request.status === "REQUESTING") {
+    if (user.role === "PROVIDER" && request.providerId === user.id) return true;
+    if (
+      user.role === "REP" &&
+      request.assignedRepId === user.id &&
+      request.acknowledgedAt
+    ) {
+      return true;
+    }
     return false;
   }
 
@@ -96,6 +109,15 @@ export function canViewDeviceIdentifiers(
   options?: { isDelegatedAdmin?: boolean }
 ): boolean {
   if (canViewRequestPhi(user, request, options)) return true;
+
+  if (
+    user.role === "REP" &&
+    request.assignedRepId === user.id &&
+    request.status === "REQUESTING" &&
+    (request as { acknowledgedAt?: Date | null }).acknowledgedAt
+  ) {
+    return true;
+  }
 
   if (user.role === "COMPANY_ADMIN" && user.companyId === request.companyId) {
     return ["ACCEPTED", "EN_ROUTE", "ARRIVED", "COMPLETED"].includes(

@@ -13,9 +13,11 @@ const PIPELINE = [
 ] as const;
 
 export function StatusPipeline({ currentStatus }: { currentStatus: string }) {
-  if (currentStatus === "CANCELLED") {
+  if (currentStatus === "CANCELLED" || currentStatus === "DECLINED") {
     return (
-      <p className="text-sm text-slate-500">This request was cancelled.</p>
+      <p className="text-sm text-slate-500">
+        This request was {currentStatus === "DECLINED" ? "declined" : "cancelled"}.
+      </p>
     );
   }
 

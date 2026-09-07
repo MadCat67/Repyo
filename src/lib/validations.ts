@@ -132,10 +132,23 @@ export const updateRequestStatusSchema = z.object({
     "ARRIVED",
     "COMPLETED",
     "CANCELLED",
+    "DECLINED",
   ]),
   lat: z.number().optional(),
   lng: z.number().optional(),
   note: z.string().optional(),
+});
+
+export const forwardRequestSchema = z.object({
+  action: z.literal("FORWARD"),
+  forwardedToId: z.string().uuid(),
+  reason: z.string().max(500).optional(),
+  targetTeamId: z.string().uuid().optional(),
+});
+
+export const declineRequestSchema = z.object({
+  action: z.literal("DECLINE"),
+  reason: z.string().max(500).optional(),
 });
 
 export const assignRepSchema = z.object({
@@ -239,6 +252,9 @@ export const updateCompanySchema = z.object({
   approvedEmailDomains: z.array(z.string()).optional(),
   ssoEnabled: z.boolean().optional(),
   scimEnabled: z.boolean().optional(),
+  forwardEnabled: z.boolean().optional(),
+  forwardTeamMembersOnly: z.boolean().optional(),
+  forwardAllowManagers: z.boolean().optional(),
 });
 
 export const updateUserSchema = z.object({

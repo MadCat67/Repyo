@@ -4,8 +4,9 @@ import { StatusBadge, UrgencyBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusPipeline } from "@/components/shared/status-pipeline";
 import { format } from "date-fns";
-import { Heart, MapPin, Phone, User, X, Cpu } from "lucide-react";
-import { useState } from "react";
+import { Heart, MapPin, Phone, User, X, Cpu, ArrowRightLeft } from "lucide-react";
+import { useEffect, useState } from "react";
+import { fetchJson } from "@/lib/api-client";
 
 export interface RequestData {
   id: string;
@@ -34,6 +35,8 @@ export interface RequestData {
   crmLookupStatus?: string | null;
   phiRestricted?: boolean;
   identifiersHidden?: boolean;
+  acknowledgedAt?: string | null;
+  alertActive?: boolean;
   statusLogs?: { status: string; createdAt: string; note?: string | null }[];
 }
 
@@ -51,6 +54,8 @@ export function RequestCard({
   role,
   showPipeline = false,
   availableReps = [],
+  currentUserId,
+  onRefresh,
 }: {
   request: RequestData;
   onAction?: (action: string, requestId: string) => void;
@@ -60,9 +65,46 @@ export function RequestCard({
   role: "provider" | "rep" | "company";
   showPipeline?: boolean;
   availableReps?: RepOption[];
+  currentUserId?: string;
+  onRefresh?: () => void;
 }) {
   const [expanded, setExpanded] = useState(showPipeline);
   const [selectedRepId, setSelectedRepId] = useState("");
+  const [opening, setOpening] = useState(false);
+  const [localRequest, setLocalRequest] = useState(request);
+  const [openError, setOpenError] = useState("");
+
+  useEffect(() => {
+    setLocalRequest(request);
+  }, [request]);
+
+  const isAssignedRep =
+    role === "rep" &&
+    currentUserId &&
+    localRequest.assignedRep?.id === currentUserId;
+  const needsOpen =
+    isAssignedRep &&
+    localRequest.status === "REQUESTING" &&
+    !localRequest.acknowledgedAt;
+  const canRespond =
+    isAssignedRep &&
+    localRequest.status === "REQUESTING" &&
+    Boolean(localRequest.acknowledgedAt);
+
+  async function openRequest() {
+    setOpening(true);
+    setOpenError("");
+    try {
+      const detail = await fetchJson<RequestData>(`/api/requests/${localRequest.id}`);
+      setLocalRequest((prev) => ({ ...prev, ...detail }));
+      setExpanded(true);
+      onRefresh?.();
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : "Could not open request");
+    } finally {
+      setOpening(false);
+    }
+  }
 
   const canManageAsAdmin = role === "company";
 
@@ -72,110 +114,122 @@ export function RequestCard({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-slate-900">{request.facilityName}</h3>
-              <UrgencyBadge urgency={request.urgency} />
+              <h3 className="font-semibold text-slate-900">{localRequest.facilityName}</h3>
+              <UrgencyBadge urgency={localRequest.urgency} />
+              {localRequest.alertActive && isAssignedRep && (
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-700">
+                  New
+                </span>
+              )}
             </div>
-            <p className="mt-1 text-sm text-slate-600">{request.procedureType}</p>
-            {request.facilityZipCode && (
-              <p className="text-xs text-slate-500">Zip {request.facilityZipCode}</p>
+            <p className="mt-1 text-sm text-slate-600">{localRequest.procedureType}</p>
+            {localRequest.facilityZipCode && (
+              <p className="text-xs text-slate-500">Zip {localRequest.facilityZipCode}</p>
             )}
-            {request.identifiersHidden && (role === "rep" || role === "company") && (
+            {localRequest.identifiersHidden && (role === "rep" || role === "company") && (
               <p className="text-xs font-medium text-amber-700">
-                Patient identifiers hidden until request is accepted
+                {needsOpen
+                  ? "Open this request to acknowledge and view protected details"
+                  : "Protected details available after acknowledgment"}
               </p>
             )}
-            {role === "company" && request.provider && (
+            {canRespond && (
+              <p className="text-xs font-medium text-emerald-700">
+                Acknowledged — choose Accept, Forward, or Decline
+              </p>
+            )}
+            {role === "company" && localRequest.provider && (
               <p className="text-xs text-slate-500">
-                Provider: {request.provider.name}
+                Provider: {localRequest.provider.name}
               </p>
             )}
-            {!request.provider && request.initiatedByRep && (
+            {!localRequest.provider && localRequest.initiatedByRep && (
               <p className="text-xs text-slate-500">
-                Created by rep: {request.initiatedByRep.name}
+                Created by rep: {localRequest.initiatedByRep.name}
               </p>
             )}
-            {request.requesterName && (
+            {localRequest.requesterName && (
               <p className="text-xs text-slate-500">
-                Requester: {request.requesterName}
+                Requester: {localRequest.requesterName}
               </p>
             )}
-            {role !== "company" && request.company && (
-              <p className="text-xs text-slate-500">{request.company.name}</p>
+            {role !== "company" && localRequest.company && (
+              <p className="text-xs text-slate-500">{localRequest.company.name}</p>
             )}
             <p className="mt-1 text-xs text-slate-500">
-              {format(new Date(request.scheduledAt), "MMM d, yyyy 'at' h:mm a")}
+              {format(new Date(localRequest.scheduledAt), "MMM d, yyyy 'at' h:mm a")}
             </p>
           </div>
-          <StatusBadge status={request.status} />
+          <StatusBadge status={localRequest.status} />
         </div>
 
         {(expanded || showPipeline) && (
           <div className="mt-4 border-t border-slate-100 pt-4">
-            <StatusPipeline currentStatus={request.status} />
-            {request.department && (
+            <StatusPipeline currentStatus={localRequest.status} />
+            {localRequest.department && (
               <p className="mt-2 text-xs text-slate-500">
-                {request.department}
-                {request.physicianName ? ` · ${request.physicianName}` : ""}
+                {localRequest.department}
+                {localRequest.physicianName ? ` · ${localRequest.physicianName}` : ""}
               </p>
             )}
-            {request.notes && (
-              <p className="mt-2 text-sm text-slate-600">{request.notes}</p>
+            {localRequest.notes && (
+              <p className="mt-2 text-sm text-slate-600">{localRequest.notes}</p>
             )}
-            {(request.deviceManufacturer || request.deviceName) &&
+            {(localRequest.deviceManufacturer || localRequest.deviceName) &&
               (role === "rep" || role === "company") && (
                 <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                   <div className="flex items-center gap-2 text-slate-700">
                     <Cpu className="h-4 w-4 shrink-0 text-rose-500" />
                     <span className="font-medium">Device (CRM)</span>
                   </div>
-                  {request.deviceManufacturer && (
+                  {localRequest.deviceManufacturer && (
                     <p className="mt-1 text-xs text-slate-600">
-                      Manufacturer: {request.deviceManufacturer}
+                      Manufacturer: {localRequest.deviceManufacturer}
                     </p>
                   )}
-                  {request.deviceName && (
-                    <p className="text-xs text-slate-800">{request.deviceName}</p>
+                  {localRequest.deviceName && (
+                    <p className="text-xs text-slate-800">{localRequest.deviceName}</p>
                   )}
-                  {request.deviceSerial && (
-                    <p className="text-xs text-slate-500">Serial: {request.deviceSerial}</p>
+                  {localRequest.deviceSerial && (
+                    <p className="text-xs text-slate-500">Serial: {localRequest.deviceSerial}</p>
                   )}
                 </div>
               )}
           </div>
         )}
 
-        {canManageAsAdmin && request.status === "REQUESTING" && (
+        {canManageAsAdmin && localRequest.status === "REQUESTING" && (
           <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
             New request — accept and assign a rep
           </div>
         )}
 
-        {request.assignedRep && (
+        {localRequest.assignedRep && (
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm">
             <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-slate-400" />
-              <span className="font-medium">{request.assignedRep.name}</span>
+              <span className="font-medium">{localRequest.assignedRep.name}</span>
             </div>
-            {request.assignedRep.phone && (
+            {localRequest.assignedRep.phone && (
               <a
-                href={`tel:${request.assignedRep.phone}`}
+                href={`tel:${localRequest.assignedRep.phone}`}
                 className="flex items-center gap-1 text-rose-600 hover:underline"
               >
                 <Phone className="h-4 w-4" />
                 Call
               </a>
             )}
-            {request.etaMinutes != null &&
-              request.repLat != null &&
-              request.status === "EN_ROUTE" && (
+            {localRequest.etaMinutes != null &&
+              localRequest.repLat != null &&
+              localRequest.status === "EN_ROUTE" && (
               <span className="flex items-center gap-1 text-slate-500">
                 <MapPin className="h-4 w-4" />
-                ETA {request.etaMinutes} min
+                ETA {localRequest.etaMinutes} min
               </span>
             )}
-            {role === "provider" && onFavorite && request.assignedRep && (
+            {role === "provider" && onFavorite && localRequest.assignedRep && (
               <button
-                onClick={() => onFavorite(request.assignedRep!.id)}
+                onClick={() => onFavorite(localRequest.assignedRep!.id)}
                 className="flex items-center gap-1 text-rose-500 hover:text-rose-700"
               >
                 <Heart className={`h-4 w-4 ${isFavorite ? "fill-rose-500" : ""}`} />
@@ -186,21 +240,31 @@ export function RequestCard({
         )}
       </div>
 
+      {openError && (
+        <p className="mt-2 text-xs text-red-600">{openError}</p>
+      )}
+
       <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
-        {!showPipeline && (
+        {needsOpen && (
+          <Button size="sm" onClick={openRequest} disabled={opening}>
+            {opening ? "Opening..." : "Open Request"}
+          </Button>
+        )}
+
+        {!showPipeline && !needsOpen && (
           <Button size="sm" variant="ghost" onClick={() => setExpanded(!expanded)}>
             {expanded ? "Hide" : "Track"} Status
           </Button>
         )}
 
-        {canManageAsAdmin && request.status === "REQUESTING" && onAction && (
-          <Button size="sm" onClick={() => onAction("ACCEPTED", request.id)}>
+        {canManageAsAdmin && localRequest.status === "REQUESTING" && onAction && (
+          <Button size="sm" onClick={() => onAction("ACCEPTED", localRequest.id)}>
             Accept
           </Button>
         )}
 
         {canManageAsAdmin &&
-          ["REQUESTING", "ACCEPTED"].includes(request.status) &&
+          ["REQUESTING", "ACCEPTED"].includes(localRequest.status) &&
           onAssignRep &&
           availableReps.length > 0 && (
             <>
@@ -221,7 +285,7 @@ export function RequestCard({
                 variant="outline"
                 disabled={!selectedRepId}
                 onClick={() => {
-                  if (selectedRepId) onAssignRep(request.id, selectedRepId);
+                  if (selectedRepId) onAssignRep(localRequest.id, selectedRepId);
                 }}
               >
                 Assign
@@ -229,43 +293,57 @@ export function RequestCard({
             </>
           )}
 
-        {role === "rep" &&
-          request.assignedRep &&
-          request.status === "REQUESTING" &&
-          onAction && (
-            <Button size="sm" onClick={() => onAction("ACCEPTED", request.id)}>
-              Accept Request
+        {canRespond && onAction && (
+          <>
+            <Button size="sm" onClick={() => onAction("ACCEPTED", localRequest.id)}>
+              Accept
             </Button>
-          )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onAction("FORWARD", localRequest.id)}
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Forward
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onAction("DECLINE", localRequest.id)}
+            >
+              Decline
+            </Button>
+          </>
+        )}
 
         {role === "rep" &&
-          request.assignedRep &&
-          request.status === "ACCEPTED" &&
+          localRequest.assignedRep &&
+          localRequest.status === "ACCEPTED" &&
           onAction && (
-            <Button size="sm" onClick={() => onAction("EN_ROUTE", request.id)}>
+            <Button size="sm" onClick={() => onAction("EN_ROUTE", localRequest.id)}>
               Mark En Route
             </Button>
           )}
 
-        {role === "rep" && request.status === "EN_ROUTE" && onAction && (
-          <Button size="sm" onClick={() => onAction("ARRIVED", request.id)}>
+        {role === "rep" && localRequest.status === "EN_ROUTE" && onAction && (
+          <Button size="sm" onClick={() => onAction("ARRIVED", localRequest.id)}>
             Mark Arrived
           </Button>
         )}
 
-        {role === "rep" && request.status === "ARRIVED" && onAction && (
-          <Button size="sm" onClick={() => onAction("COMPLETED", request.id)}>
+        {role === "rep" && localRequest.status === "ARRIVED" && onAction && (
+          <Button size="sm" onClick={() => onAction("COMPLETED", localRequest.id)}>
             Complete Request
           </Button>
         )}
 
         {role === "provider" &&
-          !["COMPLETED", "CANCELLED"].includes(request.status) &&
+          !["COMPLETED", "CANCELLED", "DECLINED"].includes(localRequest.status) &&
           onAction && (
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onAction("CANCELLED", request.id)}
+              onClick={() => onAction("CANCELLED", localRequest.id)}
             >
               <X className="h-3.5 w-3.5" />
               Cancel

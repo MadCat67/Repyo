@@ -32,6 +32,7 @@ enum RequestStatus {
   ARRIVED
   COMPLETED
   CANCELLED
+  DECLINED
 }
 
 enum RepStatus {
@@ -71,6 +72,9 @@ enum RoutingEventType {
   REP_NOTIFIED
   REP_AUTO_ASSIGNED
   REP_OPENED_REQUEST
+  REP_ACKNOWLEDGED
+  REP_FORWARDED
+  REP_DECLINED
   ADMIN_REASSIGNED
   REP_ACCEPTED
   PHI_ACCESSED
@@ -205,6 +209,8 @@ model User {
 
   providerRequests   ServiceRequest[] @relation("ProviderRequests")
   assignedRequests   ServiceRequest[] @relation("AssignedRepRequests")
+  originalRepRequests ServiceRequest[] @relation("OriginalRepRequests")
+  acknowledgedRequests ServiceRequest[] @relation("AcknowledgedRequests")
   adminRequests      ServiceRequest[] @relation("AdminRequests")
   initiatedRequests  ServiceRequest[] @relation("RepInitiatedRequests")
   favoriteReps     FavoriteRep[]    @relation("ProviderFavorites")
@@ -229,6 +235,9 @@ model User {
   healthcareSitesCreated  HealthcareSite[]         @relation("SiteCreator")
   managedTeams            CompanyTeam[]            @relation("TeamManager")
   teamMemberships         CompanyTeamMember[]
+  forwardsSent            RequestForward[]         @relation("ForwardSender")
+  forwardsReceived        RequestForward[]         @relation("ForwardRecipient")
+  forwardsAsOriginal      RequestForward[]         @relation("ForwardOriginalRep")
 }
 
 model Company {
@@ -253,6 +262,9 @@ model Company {
   approvedEmailDomains        String[] @default([])
   ssoEnabled                  Boolean  @default(false)
   scimEnabled                 Boolean  @default(false)
+  forwardEnabled              Boolean  @default(true)
+  forwardTeamMembersOnly      Boolean  @default(false)
+  forwardAllowManagers        Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -574,6 +586,7 @@ model CompanyTeam {
   members     CompanyTeamMember[]
   assignments ServiceRequest[]
   invitations PlatformInvitation[]
+  forwards    RequestForward[]
 
   @@index([companyId])
   @@index([managerUserId])
@@ -642,6 +655,10 @@ model ServiceRequest {
   repLat               Float?
   repLng               Float?
   etaMinutes           Int?
+  originalRepId        String?
+  acknowledgedAt       DateTime?
+  acknowledgedById     String?
+  alertActive          Boolean        @default(false)
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
@@ -650,11 +667,14 @@ model ServiceRequest {
   assignedAdmin  User?    @relation("AdminRequests", fields: [assignedAdminId], references: [id])
   company        Company  @relation(fields: [companyId], references: [id])
   assignedRep    User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
+  originalRep    User?    @relation("OriginalRepRequests", fields: [originalRepId], references: [id])
+  acknowledgedBy User?    @relation("AcknowledgedRequests", fields: [acknowledgedById], references: [id])
   healthcareSite HealthcareSite? @relation(fields: [healthcareSiteId], references: [id])
   team           CompanyTeam?    @relation(fields: [teamId], references: [id])
   statusLogs     RequestStatusLog[]
   routingEvents  RequestRoutingEvent[]
   phiAccessLogs  PhiAccessLog[]
+  forwards       RequestForward[]
 
   @@index([providerId])
   @@index([initiatedByRepId])
@@ -662,6 +682,31 @@ model ServiceRequest {
   @@index([assignedRepId])
   @@index([status])
   @@index([companyId])
+}
+
+model RequestForward {
+  id                    String   @id @default(uuid())
+  requestId             String
+  originalRepId         String
+  forwardedById         String
+  forwardedToId         String
+  forwardReason         String?
+  forwardTimestamp      DateTime @default(now())
+  authorizationCheck    Json
+  newRepAcknowledgedAt  DateTime?
+  newRepAcceptedAt      DateTime?
+  targetTeamId          String?
+
+  request      ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  originalRep  User           @relation("ForwardOriginalRep", fields: [originalRepId], references: [id])
+  forwardedBy  User           @relation("ForwardSender", fields: [forwardedById], references: [id])
+  forwardedTo  User           @relation("ForwardRecipient", fields: [forwardedToId], references: [id])
+  targetTeam   CompanyTeam?   @relation(fields: [targetTeamId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, forwardTimestamp])
+  @@index([originalRepId])
+  @@index([forwardedToId])
+  @@index([forwardedById])
 }
 
 model RequestStatusLog {

@@ -257,7 +257,7 @@ export async function assignRepToRequest(
 ): Promise<{ assigned: boolean; repName?: string; error?: string }> {
   const existing = await db.serviceRequest.findUnique({
     where: { id: requestId },
-    select: { assignedRepId: true, companyId: true },
+    select: { assignedRepId: true, originalRepId: true, companyId: true },
   });
 
   const scheduledAt = criteria.scheduledAt ?? new Date();
@@ -326,9 +326,13 @@ export async function assignRepToRequest(
       where: { id: requestId },
       data: {
         assignedRepId: repId,
+        originalRepId: existing?.originalRepId ?? repId,
         etaMinutes,
         repLat,
         repLng,
+        acknowledgedAt: null,
+        acknowledgedById: null,
+        alertActive: true,
       },
     }),
     db.notification.create({
@@ -337,7 +341,7 @@ export async function assignRepToRequest(
         title: GENERIC_NOTIFICATION.assigned.title,
         body: GENERIC_NOTIFICATION.assigned.body,
         type: "REQUEST_ASSIGNED",
-        data: { requestId },
+        data: { requestId, alertActive: true },
       },
     }),
   ]);
