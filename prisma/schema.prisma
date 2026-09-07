@@ -149,6 +149,7 @@ model User {
   permissionChangesTarget PermissionChangeLog[] @relation("PermissionTarget")
   permissionChangesBy     PermissionChangeLog[] @relation("PermissionChangedBy")
   killSwitchesActivated   SecurityKillSwitch[]  @relation("KillSwitchActivator")
+  agreementAcceptances    AgreementAcceptance[]
 }
 
 model Company {
@@ -531,4 +532,45 @@ model SecurityKillSwitch {
   activatedBy User @relation("KillSwitchActivator", fields: [activatedById], references: [id])
 
   @@index([scope, scopeId, active])
+}
+
+model LegalDocument {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  title       String
+  version     String
+  roleScopes  Role[]
+  summary     String?
+  content     String   @db.Text
+  effectiveAt DateTime @default(now())
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  acceptances AgreementAcceptance[]
+}
+
+model AgreementAcceptance {
+  id               String   @id @default(uuid())
+  userId           String
+  documentId       String
+  documentSlug     String
+  documentVersion  String
+  documentTitle    String
+  legalName        String
+  role             Role
+  organizationId   String?
+  organizationName String?
+  facilityName     String?
+  signatureText    String
+  ipAddress        String?
+  userAgent        String?
+  metadata         Json?
+  acceptedAt       DateTime @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document LegalDocument @relation(fields: [documentId], references: [id])
+
+  @@index([userId, acceptedAt])
+  @@index([documentId])
 }

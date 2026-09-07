@@ -3,6 +3,12 @@
 import { signIn } from "@/lib/auth";
 import { canAccessRoute, getDefaultRoute } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
+import { recordAgreementAcceptances } from "@/lib/legal/acceptance";
+import {
+  PROVIDER_AUTHORIZATION_SLUGS,
+  PROVIDER_PRIVACY_SLUGS,
+  REP_REQUIRED_SLUGS,
+} from "@/lib/legal/documents";
 import { signupSchema } from "@/lib/validations";
 import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
@@ -24,9 +30,16 @@ export async function signupAction(formData: FormData) {
     requesterPhone: formData.get("requesterPhone") || undefined,
     requesterFax: formData.get("requesterFax") || undefined,
     zipCodeStart: formData.get("zipCodeStart") || undefined,
+    zipCodeEnd: formData.get("zipCodeEnd") || undefined,
     organizationId: formData.get("organizationId") || undefined,
     requestedOrgName: formData.get("requestedOrgName") || undefined,
     requestOrgAccess: formData.get("requestOrgAccess") === "true" || undefined,
+    acceptProviderAuthorization:
+      formData.get("acceptProviderAuthorization") === "true" || undefined,
+    acceptProviderPrivacy:
+      formData.get("acceptProviderPrivacy") === "true" || undefined,
+    acceptTermsAndPrivacy:
+      formData.get("acceptTermsAndPrivacy") === "true" || undefined,
   });
 
   if (!parsed.success) {
@@ -53,6 +66,9 @@ export async function signupAction(formData: FormData) {
     organizationId,
     requestedOrgName,
     requestOrgAccess,
+    acceptProviderAuthorization,
+    acceptProviderPrivacy,
+    acceptTermsAndPrivacy,
   } = parsed.data;
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -107,7 +123,16 @@ export async function signupAction(formData: FormData) {
     });
   }
 
-  await db.user.create({
+  let organizationName: string | null = null;
+  if (linkedOrganizationId) {
+    const org = await db.providerOrganization.findUnique({
+      where: { id: linkedOrganizationId },
+      select: { name: true },
+    });
+    organizationName = org?.name ?? requestedOrgName?.trim() ?? null;
+  }
+
+  const user = await db.user.create({
     data: {
       name: name.trim(),
       email: normalizedEmail,
@@ -159,6 +184,32 @@ export async function signupAction(formData: FormData) {
       }),
     },
   });
+
+  const legalName = name.trim();
+  if (role === "PROVIDER" && acceptProviderAuthorization && acceptProviderPrivacy) {
+    await recordAgreementAcceptances(
+      [...PROVIDER_AUTHORIZATION_SLUGS, ...PROVIDER_PRIVACY_SLUGS],
+      {
+        userId: user.id,
+        legalName,
+        role,
+        organizationId: linkedOrganizationId,
+        organizationName,
+        facilityName: facilityName?.trim() ?? null,
+        signatureText: `${legalName} — provider signup acceptance`,
+      }
+    );
+  } else if (
+    ["REP", "COMPANY_ADMIN"].includes(role) &&
+    acceptTermsAndPrivacy
+  ) {
+    await recordAgreementAcceptances([...REP_REQUIRED_SLUGS], {
+      userId: user.id,
+      legalName,
+      role,
+      signatureText: `${legalName} — account signup acceptance`,
+    });
+  }
 
   try {
     await signIn("credentials", {

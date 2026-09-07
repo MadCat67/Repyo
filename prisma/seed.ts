@@ -1,6 +1,7 @@
 import { PrismaClient, RequestStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { encryptPHI, encryptDate } from "../src/lib/encryption";
+import { LEGAL_DOCUMENTS } from "../src/lib/legal/documents";
 
 const db = new PrismaClient();
 
@@ -70,9 +71,36 @@ async function logStatus(
   });
 }
 
+async function seedLegalDocuments() {
+  for (const doc of LEGAL_DOCUMENTS) {
+    await db.legalDocument.upsert({
+      where: { slug: doc.slug },
+      create: {
+        slug: doc.slug,
+        title: doc.title,
+        version: doc.version,
+        roleScopes: doc.roleScopes,
+        summary: doc.summary,
+        content: doc.content,
+        active: true,
+      },
+      update: {
+        title: doc.title,
+        version: doc.version,
+        roleScopes: doc.roleScopes,
+        summary: doc.summary,
+        content: doc.content,
+        active: true,
+      },
+    });
+  }
+  console.log(`Seeded ${LEGAL_DOCUMENTS.length} legal documents`);
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
 
+  await seedLegalDocuments();
   await clearDemoData();
 
   // Demo users: VERIFIED account state (registered ≠ verified ≠ PHI-enabled org)
