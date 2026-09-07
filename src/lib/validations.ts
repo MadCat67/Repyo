@@ -231,6 +231,86 @@ export const updateUserSchema = z.object({
   companyId: z.string().uuid().nullable().optional(),
 });
 
+export const providerOnboardingSchema = z.object({
+  step: z.number().int().min(1).max(3),
+  organizationId: z.string().uuid().optional(),
+  requestNewOrg: z.boolean().optional(),
+  requestedOrgName: z.string().optional(),
+  workEmail: z.string().email().optional(),
+  facilityName: z.string().optional(),
+  facilityAddress: z.string().optional(),
+  facilityContactName: z.string().optional(),
+  facilityContactPhone: z.string().optional(),
+  department: z.string().optional(),
+  zipCode: z.string().optional(),
+  requesterPhone: z.string().optional(),
+  requesterFax: z.string().optional(),
+  facilityId: z.string().uuid().optional(),
+  acceptTerms: z.boolean().optional(),
+  acceptUserAgreement: z.boolean().optional(),
+});
+
+export const createNonPhiRequestSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    facilityName: z.string().min(1, "Facility name is required"),
+    facilityAddr: z.string().min(1, "Facility address is required"),
+    facilityZipCode: zipSchema,
+    facilityContactName: z.string().min(1, "Facility contact name is required"),
+    facilityContactPhone: z.string().min(1, "Facility contact phone is required"),
+    department: z.string().optional(),
+    facilityPhone: z.string().optional(),
+    facilityLat: z.number().optional(),
+    facilityLng: z.number().optional(),
+    requesterName: z.string().min(1, "Requester name is required"),
+    requesterPhone: z.string().min(1, "Requester phone is required"),
+    requesterEmail: z.string().email("Valid requester email required"),
+    requesterFax: z.string().optional(),
+    requestType: z.nativeEnum(RequestType),
+    procedureType: z.string().optional(),
+    product: z.string().optional(),
+    urgency: z.nativeEnum(RequestUrgency).optional(),
+    scheduledAt: z.string().datetime(),
+    notes: z.string().optional(),
+    preferredRepId: z.string().uuid().optional(),
+    repInitiated: z.boolean().optional(),
+    assignRepId: z.string().uuid().optional(),
+    patientName: z.string().optional(),
+    patientDOB: z.string().optional(),
+    patientRoom: z.string().optional(),
+    deviceManufacturer: z.string().optional(),
+    deviceName: z.string().optional(),
+    deviceSerial: z.string().optional(),
+    salesforceRecordId: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.requestType === "CASE" && !data.procedureType?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Procedure type is required",
+        path: ["procedureType"],
+      });
+    }
+    if (data.requestType === "CHECK" && !data.notes?.trim() && !data.procedureType?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Appointment details are required",
+        path: ["notes"],
+      });
+    }
+    if (data.repInitiated && !data.assignRepId && !data.preferredRepId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Select a rep to assign this request to",
+        path: ["assignRepId"],
+      });
+    }
+  });
+
+export function createRequestSchemaForPhi(phiEnabled: boolean) {
+  return phiEnabled ? createRequestSchema : createNonPhiRequestSchema;
+}
+
 export const signupSchema = z
   .object({
     name: z.string().min(2, "Name is required"),
@@ -248,6 +328,9 @@ export const signupSchema = z
     requesterFax: z.string().optional(),
     zipCodeStart: z.string().optional(),
     zipCodeEnd: z.string().optional(),
+    organizationId: z.string().uuid().optional(),
+    requestedOrgName: z.string().optional(),
+    requestOrgAccess: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     if (["REP", "COMPANY_ADMIN"].includes(data.role) && !data.companyId) {
@@ -258,6 +341,16 @@ export const signupSchema = z
       });
     }
     if (data.role === "PROVIDER") {
+      const hasOrg =
+        Boolean(data.organizationId?.trim()) ||
+        Boolean(data.requestedOrgName?.trim());
+      if (!hasOrg) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Select your healthcare organization or request access for your facility",
+          path: ["organizationId"],
+        });
+      }
       const required: { key: keyof typeof data; label: string }[] = [
         { key: "facilityName", label: "Facility name" },
         { key: "facilityAddress", label: "Facility address" },

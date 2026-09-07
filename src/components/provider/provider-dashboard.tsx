@@ -26,19 +26,24 @@ export function ProviderDashboard({
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [accessMessage, setAccessMessage] = useState<string | null>(null);
+  const [phiEnabled, setPhiEnabled] = useState(true);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [reqData, compData, favData] = await Promise.all([
+      const [reqData, compData, favData, access] = await Promise.all([
         fetchJson<RequestData[]>("/api/requests"),
         fetchJson<{ id: string; name: string; products: string[] }[]>("/api/companies"),
         fetchJson<{ id: string }[]>("/api/favorites"),
+        fetchJson<{ canSubmitPhi: boolean; message: string | null }>("/api/provider/access"),
       ]);
       setRequests(Array.isArray(reqData) ? reqData : []);
       setCompanies(Array.isArray(compData) ? compData : []);
       setFavorites(Array.isArray(favData) ? favData : []);
+      setPhiEnabled(access.canSubmitPhi);
+      setAccessMessage(access.message);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         window.location.href = "/login?callbackUrl=/provider&error=session";
@@ -121,6 +126,12 @@ export function ProviderDashboard({
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {!phiEnabled && accessMessage && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {accessMessage}
         </div>
       )}
 

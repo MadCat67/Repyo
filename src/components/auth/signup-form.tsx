@@ -14,11 +14,20 @@ interface Company {
   name: string;
 }
 
+interface Organization {
+  id: string;
+  name: string;
+  status: string;
+  complianceMode: string;
+}
+
 const SIGNUP_ROLES: Role[] = ["PROVIDER", "REP", "COMPANY_ADMIN"];
 
 export function SignupForm() {
   const [role, setRole] = useState<Role>("PROVIDER");
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [requestOrgAccess, setRequestOrgAccess] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -27,6 +36,11 @@ export function SignupForm() {
       .then((res) => (res.ok ? res.json() : []))
       .then((data: Company[]) => setCompanies(data))
       .catch(() => setCompanies([]));
+
+    fetch("/api/provider/organizations")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: Organization[]) => setOrganizations(data))
+      .catch(() => setOrganizations([]));
   }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -36,6 +50,7 @@ export function SignupForm() {
 
     const form = new FormData(e.currentTarget);
     form.set("role", role);
+    form.set("requestOrgAccess", requestOrgAccess ? "true" : "false");
 
     const result = await signupAction(form);
 
@@ -93,6 +108,58 @@ export function SignupForm() {
 
           {role === "PROVIDER" && (
             <>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Healthcare Organization
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Select your verified hospital or request access if not yet on GoRepYo.
+                </p>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={requestOrgAccess}
+                  onChange={(e) => setRequestOrgAccess(e.target.checked)}
+                />
+                My organization is not yet activated for GoRepYo
+              </label>
+
+              {requestOrgAccess ? (
+                <>
+                  <Input
+                    label="Hospital / Organization Name"
+                    name="requestedOrgName"
+                    required
+                    placeholder="e.g. Desert Regional Medical Center"
+                  />
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                    You may create your profile, but patient information cannot be
+                    submitted until your organization completes verification and
+                    required agreements. GoRepYo will notify you when activated.
+                  </div>
+                </>
+              ) : (
+                <Select
+                  label="Healthcare Organization"
+                  name="organizationId"
+                  required
+                  options={[
+                    {
+                      value: "",
+                      label: organizations.length
+                        ? "Select organization..."
+                        : "Loading organizations...",
+                    },
+                    ...organizations.map((o) => ({
+                      value: o.id,
+                      label: `${o.name}${o.complianceMode === "PHI_ENABLED" && o.status === "ACTIVATED" ? " (PHI Enabled)" : ""}`,
+                    })),
+                  ]}
+                />
+              )}
+
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Facility Information

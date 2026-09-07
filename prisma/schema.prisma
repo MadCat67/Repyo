@@ -116,19 +116,101 @@ model Facility {
   territories Territory[]
 }
 
+enum ProviderOrgComplianceMode {
+  STANDARD
+  PHI_ENABLED
+}
+
+enum ProviderOrgStatus {
+  PENDING
+  VERIFIED
+  ACTIVATED
+}
+
+enum ProviderAccountStatus {
+  LIMITED
+  PENDING_APPROVAL
+  PENDING_AGREEMENTS
+  ACTIVE
+}
+
+model ProviderOrganization {
+  id             String                   @id @default(uuid())
+  name           String
+  slug           String                   @unique
+  complianceMode ProviderOrgComplianceMode @default(STANDARD)
+  status         ProviderOrgStatus        @default(PENDING)
+  contactEmail   String?
+  baaExecutedAt  DateTime?
+  orgAgreementAt DateTime?
+  phiEnabledAt   DateTime?
+  verifiedAt     DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  facilities     ProviderOrgFacility[]
+  providers      ProviderProfile[]
+  accessRequests OrganizationAccessRequest[]
+}
+
+model ProviderOrgFacility {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  address        String
+  phone          String?
+  zipCode        String?
+  department     String?
+  createdAt      DateTime @default(now())
+
+  organization ProviderOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  providers    ProviderProfile[]
+}
+
+model OrganizationAccessRequest {
+  id               String   @id @default(uuid())
+  organizationId   String?
+  requestedOrgName String
+  userId           String?
+  email            String
+  name             String
+  facilityName     String?
+  department       String?
+  zipCode          String?
+  status           String   @default("PENDING")
+  createdAt        DateTime @default(now())
+
+  organization ProviderOrganization? @relation(fields: [organizationId], references: [id])
+
+  @@index([requestedOrgName])
+  @@index([organizationId])
+}
+
 model ProviderProfile {
-  userId              String   @id
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  facilityName        String?
-  facilityAddress     String?
-  facilityPhone       String?
-  facilityContactName String?
+  userId               String   @id
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId       String?
+  facilityId           String?
+  accountStatus        ProviderAccountStatus @default(LIMITED)
+  workEmail            String?
+  workEmailVerified    Boolean  @default(false)
+  termsAcceptedAt      DateTime?
+  userAgreementAt      DateTime?
+  onboardingComplete   Boolean  @default(false)
+  onboardingStep       Int      @default(0)
+  facilityName         String?
+  facilityAddress      String?
+  facilityPhone        String?
+  facilityContactName  String?
   facilityContactPhone String?
-  department          String?
-  defaultPhysician    String?
-  zipCode             String?
-  requesterPhone      String?
-  requesterFax        String?
+  department           String?
+  defaultPhysician     String?
+  zipCode              String?
+  requesterPhone       String?
+  requesterFax         String?
+
+  organization ProviderOrganization? @relation(fields: [organizationId], references: [id])
+  orgFacility  ProviderOrgFacility?  @relation(fields: [facilityId], references: [id])
 }
 
 enum AvailabilityBlockType {

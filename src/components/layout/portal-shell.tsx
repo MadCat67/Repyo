@@ -15,6 +15,7 @@ import {
   Stethoscope,
   Users,
   X,
+  Calendar,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -37,7 +38,7 @@ const NAV_CONFIG: Record<string, { title: string; items: NavItem[] }> = {
     title: "Rep App",
     items: [
       { href: "/rep", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
-      { href: "/rep/schedule", label: "Calendar", icon: <Stethoscope className="h-4 w-4" /> },
+      { href: "/rep/schedule", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
       { href: "/rep/territory", label: "Territory", icon: <MapPin className="h-4 w-4" /> },
     ],
   },
@@ -47,6 +48,7 @@ const NAV_CONFIG: Record<string, { title: string; items: NavItem[] }> = {
       { href: "/company", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
       { href: "/company/requests", label: "Requests", icon: <Stethoscope className="h-4 w-4" /> },
       { href: "/company/reps", label: "Reps", icon: <Users className="h-4 w-4" /> },
+      { href: "/company/schedule", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
       { href: "/company/analytics", label: "Analytics", icon: <Building2 className="h-4 w-4" /> },
     ],
   },
@@ -55,6 +57,7 @@ const NAV_CONFIG: Record<string, { title: string; items: NavItem[] }> = {
     items: [
       { href: "/admin", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
       { href: "/admin/tenants", label: "Tenants", icon: <Building2 className="h-4 w-4" /> },
+      { href: "/admin/organizations", label: "Provider Orgs", icon: <Stethoscope className="h-4 w-4" /> },
       { href: "/admin/users", label: "Users", icon: <Users className="h-4 w-4" /> },
     ],
   },

@@ -5,7 +5,8 @@ import { encryptPHI, encryptDate, decryptPHI, decryptDate } from "@/lib/encrypti
 import { getDelegatedAdminIdsForRep } from "@/lib/admin-matching";
 import { assignRepToRequest, findEligibleReps } from "@/lib/routing-engine";
 import { createSalesforceCase, findCompanyByManufacturer, lookupPatientDevice } from "@/lib/salesforce";
-import { createRequestSchema } from "@/lib/validations";
+import { createRequestSchemaForPhi } from "@/lib/validations";
+import { getProviderAccess } from "@/lib/provider-access";
 import { RequestUrgency } from "@prisma/client";
 import { NextResponse } from "next/server";
 
@@ -113,7 +114,14 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const parsed = createRequestSchema.safeParse(body);
+
+    const phiEnabled =
+      session.user.role === "PROVIDER"
+        ? (await getProviderAccess(session.user.id))?.canSubmitPhi ?? false
+        : true;
+
+    const schema = createRequestSchemaForPhi(phiEnabled);
+    const parsed = schema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(

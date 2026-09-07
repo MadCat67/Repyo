@@ -24,7 +24,9 @@ export async function signupAction(formData: FormData) {
     requesterPhone: formData.get("requesterPhone") || undefined,
     requesterFax: formData.get("requesterFax") || undefined,
     zipCodeStart: formData.get("zipCodeStart") || undefined,
-    zipCodeEnd: formData.get("zipCodeEnd") || undefined,
+    organizationId: formData.get("organizationId") || undefined,
+    requestedOrgName: formData.get("requestedOrgName") || undefined,
+    requestOrgAccess: formData.get("requestOrgAccess") === "true" || undefined,
   });
 
   if (!parsed.success) {
@@ -48,6 +50,9 @@ export async function signupAction(formData: FormData) {
     requesterFax,
     zipCodeStart,
     zipCodeEnd,
+    organizationId,
+    requestedOrgName,
+    requestOrgAccess,
   } = parsed.data;
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -70,6 +75,38 @@ export async function signupAction(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(password, 12);
 
+  let linkedOrganizationId = organizationId ?? null;
+  if (role === "PROVIDER" && requestOrgAccess && requestedOrgName?.trim()) {
+    const orgName = requestedOrgName.trim();
+    const slug = orgName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    const org = await db.providerOrganization.create({
+      data: {
+        name: orgName,
+        slug: `${slug}-${Date.now().toString(36)}`,
+        status: "PENDING",
+        complianceMode: "STANDARD",
+      },
+    });
+    linkedOrganizationId = org.id;
+
+    await db.organizationAccessRequest.create({
+      data: {
+        organizationId: org.id,
+        requestedOrgName: orgName,
+        email: normalizedEmail,
+        name: name.trim(),
+        facilityName: facilityName?.trim(),
+        department: department?.trim(),
+        zipCode: zipCode?.trim().slice(0, 5),
+        status: "PENDING",
+      },
+    });
+  }
+
   await db.user.create({
     data: {
       name: name.trim(),
@@ -85,6 +122,10 @@ export async function signupAction(formData: FormData) {
         phone: requesterPhone?.trim() || null,
         providerInfo: {
           create: {
+            organizationId: linkedOrganizationId,
+            accountStatus: "LIMITED",
+            onboardingComplete: false,
+            onboardingStep: linkedOrganizationId ? 2 : 1,
             facilityName: facilityName?.trim() || null,
             facilityAddress: facilityAddress?.trim() || null,
             facilityContactName: facilityContactName?.trim() || null,
@@ -93,6 +134,7 @@ export async function signupAction(formData: FormData) {
             zipCode: zipCode?.trim().slice(0, 5) ?? null,
             requesterPhone: requesterPhone?.trim() || null,
             requesterFax: requesterFax?.trim() || null,
+            workEmail: normalizedEmail,
           },
         },
       }),
@@ -122,7 +164,7 @@ export async function signupAction(formData: FormData) {
     await signIn("credentials", {
       email: normalizedEmail,
       password,
-      redirectTo: getDefaultRoute(role),
+      redirectTo: role === "PROVIDER" ? "/provider/onboarding" : getDefaultRoute(role),
     });
   } catch (error) {
     if (isRedirectError(error)) throw error;

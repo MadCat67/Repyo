@@ -137,9 +137,62 @@ async function main() {
       },
     }));
 
+  const valleyOrg = await db.providerOrganization.upsert({
+    where: { slug: "valley-heart-system" },
+    update: {
+      status: "ACTIVATED",
+      complianceMode: "PHI_ENABLED",
+      verifiedAt: new Date("2025-01-01"),
+      baaExecutedAt: new Date("2025-01-01"),
+      orgAgreementAt: new Date("2025-01-01"),
+      phiEnabledAt: new Date("2025-01-01"),
+    },
+    create: {
+      name: "Valley Heart System",
+      slug: "valley-heart-system",
+      status: "ACTIVATED",
+      complianceMode: "PHI_ENABLED",
+      contactEmail: "privacy@valleyheart.org",
+      verifiedAt: new Date("2025-01-01"),
+      baaExecutedAt: new Date("2025-01-01"),
+      orgAgreementAt: new Date("2025-01-01"),
+      phiEnabledAt: new Date("2025-01-01"),
+    },
+  });
+
+  const valleyOrgFacility =
+    (await db.providerOrgFacility.findFirst({
+      where: { organizationId: valleyOrg.id, name: "Valley Heart Center" },
+    })) ??
+    (await db.providerOrgFacility.create({
+      data: {
+        organizationId: valleyOrg.id,
+        name: "Valley Heart Center",
+        address: "1200 Medical Blvd, Phoenix, AZ 85004",
+        zipCode: "85004",
+        department: "EP Lab",
+        phone: "(602) 555-0100",
+      },
+    }));
+
+  await db.providerOrganization.upsert({
+    where: { slug: "desert-regional-pending" },
+    update: { status: "PENDING", complianceMode: "STANDARD" },
+    create: {
+      name: "Desert Regional Medical",
+      slug: "desert-regional-pending",
+      status: "PENDING",
+      complianceMode: "STANDARD",
+    },
+  });
+
   const provider = await db.user.upsert({
     where: { email: "provider@demo.com" },
-    update: { passwordHash, name: "Dr. Sarah Chen", phone: "(602) 555-0101" },
+    update: {
+      passwordHash,
+      name: "Dr. Sarah Chen",
+      phone: "(602) 555-0101",
+    },
     create: {
       email: "provider@demo.com",
       passwordHash,
@@ -148,6 +201,15 @@ async function main() {
       role: "PROVIDER",
       providerInfo: {
         create: {
+          organizationId: valleyOrg.id,
+          facilityId: valleyOrgFacility.id,
+          accountStatus: "ACTIVE",
+          onboardingComplete: true,
+          onboardingStep: 4,
+          workEmail: "provider@demo.com",
+          workEmailVerified: true,
+          termsAcceptedAt: new Date("2025-01-01"),
+          userAgreementAt: new Date("2025-01-01"),
           facilityName: "Valley Heart Center",
           facilityAddress: "1200 Medical Blvd, Phoenix, AZ 85004",
           facilityPhone: "(602) 555-0100",
@@ -168,6 +230,15 @@ async function main() {
     await db.providerProfile.create({
       data: {
         userId: provider.id,
+        organizationId: valleyOrg.id,
+        facilityId: valleyOrgFacility.id,
+        accountStatus: "ACTIVE",
+        onboardingComplete: true,
+        onboardingStep: 4,
+        workEmail: "provider@demo.com",
+        workEmailVerified: true,
+        termsAcceptedAt: new Date("2025-01-01"),
+        userAgreementAt: new Date("2025-01-01"),
         facilityName: "Valley Heart Center",
         facilityAddress: "1200 Medical Blvd, Phoenix, AZ 85004",
         facilityPhone: "(602) 555-0100",
@@ -175,16 +246,55 @@ async function main() {
         facilityContactPhone: "(602) 555-0100",
         department: "EP Lab",
         defaultPhysician: "Dr. Sarah Chen",
-        zipCode: "85044",
+        zipCode: "85004",
         requesterPhone: "(602) 555-0101",
         requesterFax: "(602) 555-0199",
+      },
+    });
+  } else {
+    await db.providerProfile.update({
+      where: { userId: provider.id },
+      data: {
+        organizationId: valleyOrg.id,
+        facilityId: valleyOrgFacility.id,
+        accountStatus: "ACTIVE",
+        onboardingComplete: true,
+        onboardingStep: 4,
+        workEmail: "provider@demo.com",
+        workEmailVerified: true,
+        termsAcceptedAt: new Date("2025-01-01"),
+        userAgreementAt: new Date("2025-01-01"),
+        zipCode: "85004",
       },
     });
   }
 
   const provider2 = await db.user.upsert({
     where: { email: "provider2@demo.com" },
-    update: { passwordHash, name: "Dr. James Park" },
+    update: {
+      passwordHash,
+      name: "Dr. James Park",
+      providerInfo: {
+        upsert: {
+          create: {
+            accountStatus: "LIMITED",
+            onboardingComplete: true,
+            onboardingStep: 4,
+            workEmail: "provider2@demo.com",
+            termsAcceptedAt: new Date("2025-01-01"),
+            userAgreementAt: new Date("2025-01-01"),
+            facilityName: "Desert Regional Medical",
+            facilityAddress: "45000 Monterey Ave, Palm Desert, CA 92260",
+            department: "Cath Lab",
+            defaultPhysician: "Dr. James Park",
+          },
+          update: {
+            accountStatus: "LIMITED",
+            onboardingComplete: true,
+          },
+        },
+      },
+    },
     create: {
       email: "provider2@demo.com",
       passwordHash,
@@ -193,6 +303,12 @@ async function main() {
       role: "PROVIDER",
       providerInfo: {
         create: {
+          accountStatus: "LIMITED",
+          onboardingComplete: true,
+          onboardingStep: 4,
+          workEmail: "provider2@demo.com",
+          termsAcceptedAt: new Date("2025-01-01"),
+          userAgreementAt: new Date("2025-01-01"),
           facilityName: "Desert Regional Medical",
           facilityAddress: "45000 Monterey Ave, Palm Desert, CA 92260",
           department: "Cath Lab",

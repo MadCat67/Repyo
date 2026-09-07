@@ -1,0 +1,255 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PortalShell } from "@/components/layout/portal-shell";
+import { Button } from "@/components/ui/button";
+import { fetchJson } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
+import {
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  format,
+  isSameDay,
+  isSameMonth,
+  startOfMonth,
+  subMonths,
+} from "date-fns";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+interface CalendarRequest {
+  id: string;
+  facilityName: string;
+  procedureType: string | null;
+  scheduledAt: string;
+  status: string;
+  urgency: string;
+}
+
+interface RepCalendarData {
+  id: string;
+  name: string;
+  status: string;
+  blocks: { id: string; type: string; startAt: string; endAt: string; note?: string | null }[];
+  requests: CalendarRequest[];
+}
+
+const REP_COLORS = [
+  "bg-rose-100 text-rose-800 border-rose-200",
+  "bg-blue-100 text-blue-800 border-blue-200",
+  "bg-emerald-100 text-emerald-800 border-emerald-200",
+  "bg-amber-100 text-amber-800 border-amber-200",
+  "bg-violet-100 text-violet-800 border-violet-200",
+];
+
+export function CompanyCalendarPage({ userName }: { userName: string }) {
+  const [viewDate, setViewDate] = useState(new Date());
+  const [reps, setReps] = useState<RepCalendarData[]>([]);
+  const [selectedRepId, setSelectedRepId] = useState<string>("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const monthKey = format(viewDate, "yyyy-MM");
+
+  const loadCalendar = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({ month: monthKey });
+      if (selectedRepId !== "all") params.set("repId", selectedRepId);
+      const data = await fetchJson<{ reps: RepCalendarData[] }>(
+        `/api/company/calendar?${params.toString()}`
+      );
+      setReps(data.reps ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load calendar");
+      setReps([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [monthKey, selectedRepId]);
+
+  useEffect(() => {
+    loadCalendar();
+  }, [loadCalendar]);
+
+  const monthStart = startOfMonth(viewDate);
+  const monthEnd = endOfMonth(viewDate);
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const padding = monthStart.getDay();
+
+  const allRequests = useMemo(
+    () => reps.flatMap((rep) => rep.requests.map((r) => ({ ...r, repName: rep.name, repId: rep.id }))),
+    [reps]
+  );
+
+  const colorByRep = useMemo(() => {
+    const map = new Map<string, string>();
+    reps.forEach((rep, i) => {
+      map.set(rep.id, REP_COLORS[i % REP_COLORS.length]);
+    });
+    return map;
+  }, [reps]);
+
+  return (
+    <PortalShell portal="company" userName={userName}>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Rep Calendar</h1>
+          <p className="text-sm text-slate-600">
+            View schedules, time off, and assigned cases across your team
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setViewDate(subMonths(viewDate, 1))}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="min-w-[140px] text-center font-medium text-slate-900">
+            {format(viewDate, "MMMM yyyy")}
+          </span>
+          <Button variant="secondary" size="sm" onClick={() => setViewDate(addMonths(viewDate, 1))}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label className="text-sm text-slate-600">Filter rep:</label>
+        <select
+          value={selectedRepId}
+          onChange={(e) => setSelectedRepId(e.target.value)}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        >
+          <option value="all">All reps</option>
+          {reps.map((rep) => (
+            <option key={rep.id} value={rep.id}>
+              {rep.name} ({rep.status.replace("_", " ")})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      <div className="mb-4 flex flex-wrap gap-3">
+        {reps.map((rep) => (
+          <span
+            key={rep.id}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium",
+              colorByRep.get(rep.id)
+            )}
+          >
+            {rep.name}
+          </span>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-medium uppercase text-slate-500">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+            <div key={d}>{d}</div>
+          ))}
+        </div>
+
+        {loading ? (
+          <p className="py-12 text-center text-slate-500">Loading calendar...</p>
+        ) : (
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: padding }).map((_, i) => (
+              <div key={`pad-${i}`} className="min-h-[100px] rounded-lg bg-slate-50/50" />
+            ))}
+            {days.map((day) => {
+              const dayRequests = allRequests.filter((r) =>
+                isSameDay(new Date(r.scheduledAt), day)
+              );
+              const dayBlocks = reps.flatMap((rep) =>
+                rep.blocks
+                  .filter(
+                    (b) =>
+                      new Date(b.startAt) <= day &&
+                      new Date(b.endAt) >= day
+                  )
+                  .map((b) => ({ ...b, repName: rep.name, repId: rep.id }))
+              );
+
+              return (
+                <div
+                  key={day.toISOString()}
+                  className={cn(
+                    "min-h-[100px] rounded-lg border p-1.5",
+                    isSameMonth(day, viewDate)
+                      ? "border-slate-100 bg-white"
+                      : "border-transparent bg-slate-50 text-slate-400"
+                  )}
+                >
+                  <div className="mb-1 text-xs font-medium text-slate-700">
+                    {format(day, "d")}
+                  </div>
+                  <div className="space-y-1">
+                    {dayBlocks.slice(0, 2).map((block) => (
+                      <div
+                        key={block.id}
+                        className="truncate rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
+                        title={`${block.repName}: ${block.type}`}
+                      >
+                        {block.repName.split(" ")[0]} · {block.type === "VACATION" ? "Vacation" : "Off"}
+                      </div>
+                    ))}
+                    {dayRequests.slice(0, 3).map((req) => (
+                      <div
+                        key={req.id}
+                        className={cn(
+                          "truncate rounded border px-1 py-0.5 text-[10px]",
+                          colorByRep.get(req.repId)
+                        )}
+                        title={`${req.repName} — ${req.facilityName}`}
+                      >
+                        {format(new Date(req.scheduledAt), "h:mm a")} {req.facilityName}
+                      </div>
+                    ))}
+                    {dayRequests.length > 3 && (
+                      <div className="text-[10px] text-slate-500">
+                        +{dayRequests.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <section className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold uppercase text-slate-500">
+          Upcoming assignments
+        </h2>
+        <div className="space-y-2">
+          {allRequests.length === 0 ? (
+            <p className="text-sm text-slate-500">No assignments this month.</p>
+          ) : (
+            allRequests.slice(0, 12).map((req) => (
+              <div
+                key={req.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm"
+              >
+                <div>
+                  <p className="font-medium text-slate-900">{req.facilityName}</p>
+                  <p className="text-xs text-slate-500">
+                    {req.repName} · {req.procedureType ?? "Request"} · {req.status}
+                  </p>
+                </div>
+                <p className="text-xs text-slate-600">
+                  {format(new Date(req.scheduledAt), "MMM d, h:mm a")}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+    </PortalShell>
+  );
+}

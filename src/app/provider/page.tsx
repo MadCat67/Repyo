@@ -13,6 +13,10 @@ export default async function ProviderPage() {
     where: { userId: session.user.id },
   });
 
+  if (!profile?.onboardingComplete) {
+    redirect("/provider/onboarding");
+  }
+
   return (
     <ProviderDashboard
       userName={session.user.name}

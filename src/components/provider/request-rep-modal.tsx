@@ -126,6 +126,20 @@ export function RequestRepModal({
   const [deviceName, setDeviceName] = useState("");
   const [deviceSerial, setDeviceSerial] = useState("");
   const [salesforceRecordId, setSalesforceRecordId] = useState("");
+  const [phiEnabled, setPhiEnabled] = useState(true);
+  const [accessMessage, setAccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isRepMode) return;
+    fetchJson<{ canSubmitPhi: boolean; message: string | null }>("/api/provider/access")
+      .then((access) => {
+        setPhiEnabled(access.canSubmitPhi);
+        setAccessMessage(access.message);
+      })
+      .catch(() => {
+        setPhiEnabled(false);
+      });
+  }, [isRepMode]);
 
   const company = companies.find((c) => c.id === selectedCompany);
   const isProcedure = requestKind === "procedure";
@@ -349,13 +363,13 @@ export function RequestRepModal({
       procedureType: isProcedure
         ? form.get("procedureType")
         : form.get("appointmentDetails") || undefined,
-      patientName: patientName.trim(),
-      patientDOB,
-      patientRoom: isProcedure ? form.get("patientRoom") : undefined,
-      deviceManufacturer: deviceManufacturer.trim(),
-      deviceName: deviceName || undefined,
-      deviceSerial: deviceSerial || undefined,
-      salesforceRecordId: salesforceRecordId || undefined,
+      patientName: phiEnabled ? patientName.trim() : undefined,
+      patientDOB: phiEnabled ? patientDOB : undefined,
+      patientRoom: phiEnabled && isProcedure ? form.get("patientRoom") : undefined,
+      deviceManufacturer: phiEnabled ? deviceManufacturer.trim() : undefined,
+      deviceName: phiEnabled ? deviceName || undefined : undefined,
+      deviceSerial: phiEnabled ? deviceSerial || undefined : undefined,
+      salesforceRecordId: phiEnabled ? salesforceRecordId || undefined : undefined,
       product: selectedProduct || undefined,
       urgency: deriveUrgency(scheduledDate, scheduledTime),
       scheduledAt: new Date(`${scheduledDate}T${scheduledTime}`).toISOString(),
@@ -593,6 +607,17 @@ export function RequestRepModal({
               ))}
             </div>
 
+            {!phiEnabled && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p className="font-medium">Standard (non-PHI) request</p>
+                <p className="mt-1 text-xs">
+                  {accessMessage ??
+                    "Patient-identifiable information cannot be submitted until your organization is PHI-enabled. Submit rep support requests with facility and scheduling details only."}
+                </p>
+              </div>
+            )}
+
+            {phiEnabled && (
             <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-4 space-y-4">
               <div>
                 <h4 className="text-sm font-semibold text-slate-900">
@@ -651,10 +676,11 @@ export function RequestRepModal({
                 </div>
               )}
             </div>
+            )}
 
             {isProcedure ? (
               <>
-                <Input label="Room Number" name="patientRoom" required />
+                {phiEnabled && <Input label="Room Number" name="patientRoom" required />}
                 <Select
                   label="Procedure Type"
                   name="procedureType"
