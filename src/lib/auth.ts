@@ -43,6 +43,49 @@ declare module "@auth/core/jwt" {
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id!;
+        token.role = user.role;
+        token.companyId = user.companyId ?? null;
+        token.sessionVersion = user.sessionVersion ?? 0;
+        token.accountState = user.accountState ?? "REGISTERED";
+        token.adminPermissions = user.adminPermissions ?? [];
+      }
+
+      if (token.id) {
+        const dbUser = await db.user.findUnique({
+          where: { id: token.id as string },
+          select: {
+            sessionVersion: true,
+            accountState: true,
+            role: true,
+            companyId: true,
+            adminPermissions: true,
+          },
+        });
+
+        if (!dbUser || !isAccountActive(dbUser.accountState)) {
+          token.error = "SessionRevoked";
+          return token;
+        }
+
+        if (token.sessionVersion !== dbUser.sessionVersion) {
+          token.error = "SessionRevoked";
+          return token;
+        }
+
+        token.role = dbUser.role;
+        token.companyId = dbUser.companyId;
+        token.accountState = dbUser.accountState;
+        token.adminPermissions = dbUser.adminPermissions;
+      }
+
+      return token;
+    },
+  },
   providers: [
     Credentials({
       credentials: {
