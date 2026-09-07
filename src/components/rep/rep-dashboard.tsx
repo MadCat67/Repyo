@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { connectEventSource, fetchJson } from "@/lib/api-client";
 import { REP_STATUS_LABELS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Plus, UserPlus } from "lucide-react";
+import { InviteModal } from "@/components/invitations/invite-modal";
 
 const REP_STATUSES = ["AVAILABLE", "BUSY", "OFF_DUTY", "VACATION"] as const;
 
@@ -29,6 +30,7 @@ export function RepDashboard({
   const [companyReps, setCompanyReps] = useState<{ id: string; name: string }[]>([]);
   const [companies, setCompanies] = useState<{ id: string; name: string; products: string[] }[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -144,10 +146,16 @@ export function RepDashboard({
             {pending.length} pending · {urgent.length} urgent
           </p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)} disabled={companies.length === 0}>
-          <Plus className="h-4 w-4" />
-          Create Provider Request
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowInviteModal(true)}>
+            <UserPlus className="h-4 w-4" />
+            Invite
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)} disabled={companies.length === 0}>
+            <Plus className="h-4 w-4" />
+            Create Provider Request
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -238,6 +246,10 @@ export function RepDashboard({
           </div>
         )}
       </section>
+
+      {showInviteModal && (
+        <InviteModal onClose={() => setShowInviteModal(false)} />
+      )}
 
       {showCreateModal && companies.length > 0 && (
         <RequestRepModal

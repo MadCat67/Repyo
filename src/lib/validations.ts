@@ -349,6 +349,9 @@ export const signupSchema = z
     acceptProviderAuthorization: z.boolean().optional(),
     acceptProviderPrivacy: z.boolean().optional(),
     acceptTermsAndPrivacy: z.boolean().optional(),
+    siteIds: z.string().optional(),
+    primarySiteId: z.string().uuid().optional(),
+    inviteToken: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (["REP", "COMPANY_ADMIN"].includes(data.role) && !data.companyId) {

@@ -139,6 +139,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return handleAssignRep(sessionUser, id, body);
   }
 
+  if (body.teamCalendarVisibility) {
+    return handleCalendarVisibility(sessionUser, id, body);
+  }
+
   const parsed = updateRequestStatusSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -284,4 +288,84 @@ async function handleAssignRep(
   }
 
   return NextResponse.json({ assigned: true, repName: result.repName });
+}
+
+async function handleCalendarVisibility(
+  user: ReturnType<typeof toSessionUser>,
+  requestId: string,
+  body: { teamCalendarVisibility?: string; reason?: string }
+) {
+  const existing = await db.serviceRequest.findUnique({
+    where: { id: requestId },
+    select: {
+      assignedRepId: true,
+      companyId: true,
+      teamId: true,
+      teamCalendarVisibility: true,
+    },
+  });
+
+  if (!existing?.assignedRepId) {
+    return NextResponse.json(
+      { error: "Assignment must have an assigned rep" },
+      { status: 400 }
+    );
+  }
+
+  const visibility =
+    body.teamCalendarVisibility === "HIDDEN_FROM_TEAM_PEERS"
+      ? "HIDDEN_FROM_TEAM_PEERS"
+      : "SHARED_WITH_TEAM";
+
+  const { canViewAssignmentAsManager } = await import(
+    "@/lib/teams/authorization"
+  );
+  const { updateCalendarVisibility } = await import(
+    "@/lib/teams/calendar-visibility"
+  );
+
+  const isAssignedRep =
+    user.role === "REP" && existing.assignedRepId === user.id;
+  const isManager = await canViewAssignmentAsManager(user, {
+    assignedRepId: existing.assignedRepId,
+    teamId: existing.teamId,
+    companyId: existing.companyId,
+  });
+
+  if (!isAssignedRep && !isManager && user.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (isAssignedRep && !isManager) {
+    await updateCalendarVisibility({
+      requestId,
+      visibility,
+      changedById: user.id,
+      targetRepId: existing.assignedRepId,
+      source: "REP_PREFERENCE",
+      reason: body.reason,
+      isRepPreference: true,
+    });
+  } else {
+    await updateCalendarVisibility({
+      requestId,
+      visibility,
+      changedById: user.id,
+      targetRepId: existing.assignedRepId,
+      source: "MANAGER_OVERRIDE",
+      reason: body.reason,
+    });
+  }
+
+  const updated = await db.serviceRequest.findUnique({
+    where: { id: requestId },
+    select: {
+      id: true,
+      teamCalendarVisibility: true,
+      calendarVisibilitySource: true,
+      calendarVisibilitySetAt: true,
+    },
+  });
+
+  return NextResponse.json(updated);
 }

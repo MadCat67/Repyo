@@ -3,6 +3,10 @@
 import { signIn } from "@/lib/auth";
 import { canAccessRoute, getDefaultRoute } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
+import {
+  linkSiteToOrganization,
+  setProviderSites,
+} from "@/lib/healthcare-sites/service";
 import { recordAgreementAcceptances } from "@/lib/legal/acceptance";
 import {
   PROVIDER_AUTHORIZATION_SLUGS,
@@ -14,6 +18,11 @@ import {
   verifyCompanySignup,
   verifyProviderSignup,
 } from "@/lib/verification/user-verification";
+import {
+  acceptInvitation,
+  applyInvitationPreconfig,
+  validateInvitationToken,
+} from "@/lib/invitations/service";
 import { signupSchema } from "@/lib/validations";
 import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
@@ -45,6 +54,9 @@ export async function signupAction(formData: FormData) {
       formData.get("acceptProviderPrivacy") === "true" || undefined,
     acceptTermsAndPrivacy:
       formData.get("acceptTermsAndPrivacy") === "true" || undefined,
+    siteIds: formData.get("siteIds") || undefined,
+    primarySiteId: formData.get("primarySiteId") || undefined,
+    inviteToken: formData.get("inviteToken") || undefined,
   });
 
   if (!parsed.success) {
@@ -74,8 +86,56 @@ export async function signupAction(formData: FormData) {
     acceptProviderAuthorization,
     acceptProviderPrivacy,
     acceptTermsAndPrivacy,
+    siteIds: siteIdsRaw,
+    primarySiteId,
+    inviteToken,
   } = parsed.data;
+
+  let siteIds: string[] = [];
+  if (typeof siteIdsRaw === "string" && siteIdsRaw.trim()) {
+    try {
+      const parsedIds = JSON.parse(siteIdsRaw);
+      if (Array.isArray(parsedIds)) {
+        siteIds = parsedIds.map(String);
+      }
+    } catch {
+      siteIds = siteIdsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
   const normalizedEmail = email.trim().toLowerCase();
+
+  let invitationContext: Awaited<
+    ReturnType<typeof validateInvitationToken>
+  > | null = null;
+  if (inviteToken?.trim()) {
+    const validation = await validateInvitationToken(inviteToken.trim());
+    if (!validation.valid) {
+      return { error: validation.reason };
+    }
+    if (
+      validation.invitation.inviteeEmail &&
+      validation.invitation.inviteeEmail !== normalizedEmail
+    ) {
+      return {
+        error: "This invitation was sent to a different email address",
+      };
+    }
+    invitationContext = validation;
+  }
+
+  let effectiveRole = role;
+  let effectiveOrganizationId = organizationId ?? null;
+  let effectiveCompanyId = companyId ?? null;
+
+  if (invitationContext?.valid) {
+    const inv = invitationContext.invitation;
+    effectiveRole = inv.targetRole as typeof role;
+    if (inv.organization?.id) effectiveOrganizationId = inv.organization.id;
+    if (inv.company?.id) effectiveCompanyId = inv.company.id;
+    if (effectiveRole !== role) {
+      return { error: "Account type does not match this invitation" };
+    }
+  }
 
   const existing = await db.user.findUnique({
     where: { email: normalizedEmail },
@@ -85,9 +145,9 @@ export async function signupAction(formData: FormData) {
     return { error: "An account with this email already exists. Try signing in." };
   }
 
-  if (companyId) {
+  if (effectiveCompanyId) {
     const company = await db.company.findFirst({
-      where: { id: companyId, active: true },
+      where: { id: effectiveCompanyId, active: true },
     });
     if (!company) {
       return { error: "Selected device company not found" };
@@ -96,7 +156,7 @@ export async function signupAction(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(password, 12);
 
-  let linkedOrganizationId = organizationId ?? null;
+  let linkedOrganizationId = effectiveOrganizationId;
   if (role === "PROVIDER" && requestOrgAccess && requestedOrgName?.trim()) {
     const orgName = requestedOrgName.trim();
     const slug = orgName
@@ -143,19 +203,25 @@ export async function signupAction(formData: FormData) {
           status: org.status,
           accessEnabled: org.accessEnabled,
         },
-        normalizedEmail
+        normalizedEmail,
+        { hasInvitation: Boolean(invitationContext?.valid) }
       );
       if (preview.decision === "REJECTED") {
         return { error: preview.reason };
       }
-      if (preview.decision === "REQUIRES_INVITATION") {
+      if (
+        preview.decision === "REQUIRES_INVITATION" &&
+        !invitationContext?.valid
+      ) {
         return { error: preview.reason };
       }
     }
   }
 
-  if (["REP", "COMPANY_ADMIN"].includes(role) && companyId) {
-    const company = await db.company.findUnique({ where: { id: companyId } });
+  if (["REP", "COMPANY_ADMIN"].includes(role) && effectiveCompanyId) {
+    const company = await db.company.findUnique({
+      where: { id: effectiveCompanyId },
+    });
     if (company) {
       const preview = evaluateVerificationMethod(
         {
@@ -166,12 +232,16 @@ export async function signupAction(formData: FormData) {
           scimEnabled: company.scimEnabled,
           accessEnabled: company.accessEnabled,
         },
-        normalizedEmail
+        normalizedEmail,
+        { hasInvitation: Boolean(invitationContext?.valid) }
       );
       if (preview.decision === "REJECTED") {
         return { error: preview.reason };
       }
-      if (preview.decision === "REQUIRES_INVITATION") {
+      if (
+        preview.decision === "REQUIRES_INVITATION" &&
+        !invitationContext?.valid
+      ) {
         return { error: preview.reason };
       }
     }
@@ -192,7 +262,7 @@ export async function signupAction(formData: FormData) {
       email: normalizedEmail,
       passwordHash,
       role,
-      companyId: companyId ?? null,
+      companyId: effectiveCompanyId ?? null,
       ...(role === "COMPANY_ADMIN" && {
         zipCodeStart: zipCodeStart?.trim().slice(0, 5) ?? null,
         zipCodeEnd: zipCodeEnd?.trim().slice(0, 5) ?? null,
@@ -223,11 +293,11 @@ export async function signupAction(formData: FormData) {
             status: "OFF_DUTY",
             credentialStatus: "PENDING",
             products: [],
-            companies: companyId
+            companies: effectiveCompanyId
               ? [
                   (
                     await db.company.findUnique({
-                      where: { id: companyId },
+                      where: { id: effectiveCompanyId },
                       select: { name: true },
                     })
                   )?.name ?? "",
@@ -273,6 +343,7 @@ export async function signupAction(formData: FormData) {
       organizationId: linkedOrganizationId,
       jobTitle: department?.trim() ?? null,
       facilityId: null,
+      invitationToken: inviteToken?.trim() ?? null,
     });
 
     await db.organizationAccessRequest.updateMany({
@@ -285,13 +356,55 @@ export async function signupAction(formData: FormData) {
     });
   }
 
-  if (["REP", "COMPANY_ADMIN"].includes(role) && companyId) {
+  if (role === "PROVIDER" && siteIds.length > 0) {
+    await setProviderSites(user.id, siteIds, {
+      organizationId: linkedOrganizationId,
+      primarySiteId: primarySiteId ?? siteIds[0],
+      department: department?.trim() ?? null,
+    });
+    if (linkedOrganizationId) {
+      for (const siteId of siteIds) {
+        await linkSiteToOrganization(
+          linkedOrganizationId,
+          siteId,
+          siteId === (primarySiteId ?? siteIds[0])
+        );
+      }
+    }
+  }
+
+  if (["REP", "COMPANY_ADMIN"].includes(role) && effectiveCompanyId) {
     await verifyCompanySignup({
       userId: user.id,
       email: normalizedEmail,
       legalName,
-      companyId,
+      companyId: effectiveCompanyId,
+      invitationToken: inviteToken?.trim() ?? null,
     });
+  }
+
+  if (inviteToken?.trim()) {
+    try {
+      const accepted = await acceptInvitation({
+        token: inviteToken.trim(),
+        acceptedByUserId: user.id,
+        acceptedEmail: normalizedEmail,
+      });
+      await applyInvitationPreconfig(user.id, accepted);
+    } catch {
+      // Verification may have already accepted the invitation.
+      const pending = await db.platformInvitation.findFirst({
+        where: { token: inviteToken.trim(), status: "PENDING" },
+      });
+      if (pending) {
+        await applyInvitationPreconfig(user.id, pending);
+      }
+    }
+  } else if (invitationContext?.valid) {
+    const pending = await db.platformInvitation.findUnique({
+      where: { id: invitationContext.invitation.id },
+    });
+    if (pending) await applyInvitationPreconfig(user.id, pending);
   }
 
   try {

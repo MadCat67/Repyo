@@ -16,10 +16,29 @@ export async function GET(request: Request) {
   const facilityLng = searchParams.get("facilityLng");
   const facilityState = searchParams.get("facilityState") || undefined;
   const facilityZip = searchParams.get("facilityZip") || undefined;
+  const healthcareSiteId = searchParams.get("healthcareSiteId") || undefined;
   const scheduledAtParam = searchParams.get("scheduledAt");
 
   if (!companyId) {
     return NextResponse.json({ error: "companyId required" }, { status: 400 });
+  }
+
+  let siteLat = facilityLat ? Number(facilityLat) : null;
+  let siteLng = facilityLng ? Number(facilityLng) : null;
+  let siteState = facilityState ?? null;
+  let siteZip = facilityZip ?? null;
+
+  if (healthcareSiteId) {
+    const site = await db.healthcareSite.findUnique({
+      where: { id: healthcareSiteId },
+      select: { lat: true, lng: true, state: true, zipCode: true, name: true },
+    });
+    if (site) {
+      siteLat = site.lat ?? siteLat;
+      siteLng = site.lng ?? siteLng;
+      siteState = site.state;
+      siteZip = site.zipCode;
+    }
   }
 
   const scheduledAt = scheduledAtParam ? new Date(scheduledAtParam) : new Date();
@@ -28,11 +47,12 @@ export async function GET(request: Request) {
     const eligible = await findEligibleReps({
       companyId,
       facilityName: "",
+      healthcareSiteId: healthcareSiteId ?? null,
       product: product || null,
-      facilityLat: facilityLat ? Number(facilityLat) : null,
-      facilityLng: facilityLng ? Number(facilityLng) : null,
-      facilityState: facilityState || null,
-      facilityZip: facilityZip || null,
+      facilityLat: siteLat,
+      facilityLng: siteLng,
+      facilityState: siteState,
+      facilityZip: siteZip,
       scheduledAt,
     });
 

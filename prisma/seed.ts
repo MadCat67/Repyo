@@ -2,6 +2,9 @@ import { PrismaClient, RequestStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { encryptPHI, encryptDate } from "../src/lib/encryption";
 import { LEGAL_DOCUMENTS } from "../src/lib/legal/documents";
+import { importHealthcareSitesFromJson, linkSiteToOrganization } from "../src/lib/healthcare-sites/service";
+import type { HealthcareSiteInput } from "../src/lib/healthcare-sites/normalize";
+import arizonaSites from "../data/arizona-healthcare-sites.json";
 
 const db = new PrismaClient();
 
@@ -101,6 +104,13 @@ async function main() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
 
   await seedLegalDocuments();
+  const healthcareSites = await importHealthcareSitesFromJson(
+    arizonaSites as HealthcareSiteInput[],
+    {
+    defaultStatus: "ACTIVE",
+    }
+  );
+  console.log(`Seeded ${healthcareSites.length} healthcare sites`);
   await clearDemoData();
 
   // Demo users: VERIFIED account state (registered ≠ verified ≠ PHI-enabled org)
@@ -277,6 +287,30 @@ async function main() {
         phone: "(602) 555-0300",
       },
     }));
+
+  const valleySite = healthcareSites.find((s) => s.name === "Valley Heart Center");
+  const bannerSite = healthcareSites.find((s) =>
+    s.name.includes("Banner - University Medical Center Phoenix")
+  );
+
+  if (valleySite) {
+    await linkSiteToOrganization(valleyOrg.id, valleySite.id, true);
+    await db.providerOrgFacility.updateMany({
+      where: { organizationId: valleyOrg.id, name: "Valley Heart Center" },
+      data: { siteId: valleySite.id },
+    });
+  }
+
+  if (bannerSite) {
+    await linkSiteToOrganization(bannerOrg.id, bannerSite.id, true);
+    await db.providerOrgFacility.updateMany({
+      where: {
+        organizationId: bannerOrg.id,
+        name: "Banner University Medical Center",
+      },
+      data: { siteId: bannerSite.id },
+    });
+  }
 
   const provider = await db.user.upsert({
     where: { email: "provider@demo.com" },
@@ -497,6 +531,25 @@ async function main() {
     }
   );
 
+  if (valleySite) {
+    await db.repSiteCoverage.upsert({
+      where: {
+        repUserId_siteId: { repUserId: repMike.id, siteId: valleySite.id },
+      },
+      create: { repUserId: repMike.id, siteId: valleySite.id },
+      update: {},
+    });
+  }
+  if (bannerSite) {
+    await db.repSiteCoverage.upsert({
+      where: {
+        repUserId_siteId: { repUserId: repMike.id, siteId: bannerSite.id },
+      },
+      create: { repUserId: repMike.id, siteId: bannerSite.id },
+      update: {},
+    });
+  }
+
   const repLisa = await upsertRep(
     "rep2@demo.com",
     "Lisa Wong",
@@ -555,7 +608,13 @@ async function main() {
       zipCodeStart: "85040",
       zipCodeEnd: "85050",
       ...verifiedUserDefaults,
-      adminPermissions: ["MANAGE_REPS", "MANAGE_REQUESTS", "VIEW_CALENDAR"],
+      adminPermissions: [
+        "MANAGE_REPS",
+        "MANAGE_REQUESTS",
+        "VIEW_CALENDAR",
+        "MANAGE_TEAMS",
+        "VIEW_TEAM_CALENDAR",
+      ],
     },
     create: {
       email: "admin@demo.com",
@@ -565,12 +624,52 @@ async function main() {
       companyId: medtronic.id,
       zipCodeStart: "85040",
       zipCodeEnd: "85050",
+      adminPermissions: [
+        "MANAGE_REPS",
+        "MANAGE_REQUESTS",
+        "VIEW_CALENDAR",
+        "MANAGE_TEAMS",
+        "VIEW_TEAM_CALENDAR",
+      ],
     },
   });
 
   const medtronicAdmin = await db.user.findUnique({
     where: { email: "admin@demo.com" },
     select: { id: true },
+  });
+
+  const phoenixTeam =
+    (await db.companyTeam.findFirst({
+      where: { companyId: medtronic.id, name: "Phoenix Cardiac Team" },
+    })) ??
+    (await db.companyTeam.create({
+      data: {
+        companyId: medtronic.id,
+        name: "Phoenix Cardiac Team",
+        managerUserId: medtronicAdmin!.id,
+        defaultCalendarVisibility: "SHARED_WITH_TEAM",
+      },
+    }));
+
+  for (const repId of [repMike.id, repLisa.id]) {
+    await db.companyTeamMember.upsert({
+      where: { teamId_userId: { teamId: phoenixTeam.id, userId: repId } },
+      create: { teamId: phoenixTeam.id, userId: repId },
+      update: {},
+    });
+  }
+
+  await db.serviceRequest.updateMany({
+    where: {
+      companyId: medtronic.id,
+      assignedRepId: { in: [repMike.id, repLisa.id] },
+    },
+    data: {
+      teamId: phoenixTeam.id,
+      teamCalendarVisibility: "SHARED_WITH_TEAM",
+      calendarVisibilitySource: "TEAM_DEFAULT",
+    },
   });
 
   await db.user.upsert({

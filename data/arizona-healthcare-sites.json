@@ -1,0 +1,142 @@
+[
+  {
+    "name": "Banner - University Medical Center Phoenix",
+    "address": "1111 E McDowell Rd",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85006",
+    "siteType": "HOSPITAL",
+    "lat": 33.4653,
+    "lng": -112.0644
+  },
+  {
+    "name": "Banner - Desert Medical Center",
+    "address": "14000 N 83rd Ave",
+    "city": "Peoria",
+    "state": "AZ",
+    "zipCode": "85381",
+    "siteType": "HOSPITAL",
+    "lat": 33.6122,
+    "lng": -112.2378
+  },
+  {
+    "name": "Mayo Clinic Hospital - Phoenix",
+    "address": "5777 E Mayo Blvd",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85054",
+    "siteType": "HOSPITAL",
+    "lat": 33.6598,
+    "lng": -111.9543
+  },
+  {
+    "name": "Dignity Health St. Joseph's Hospital and Medical Center",
+    "address": "350 W Thomas Rd",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85013",
+    "siteType": "HOSPITAL",
+    "lat": 33.4798,
+    "lng": -112.0789
+  },
+  {
+    "name": "HonorHealth Scottsdale Shea Medical Center",
+    "address": "9003 E Shea Blvd",
+    "city": "Scottsdale",
+    "state": "AZ",
+    "zipCode": "85260",
+    "siteType": "HOSPITAL",
+    "lat": 33.5831,
+    "lng": -111.8876
+  },
+  {
+    "name": "HonorHealth Deer Valley Medical Center",
+    "address": "19829 N 27th Ave",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85027",
+    "siteType": "HOSPITAL",
+    "lat": 33.6662,
+    "lng": -112.1154
+  },
+  {
+    "name": "Valleywise Health Medical Center",
+    "address": "2601 E Roosevelt St",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85008",
+    "siteType": "HOSPITAL",
+    "lat": 33.4587,
+    "lng": -112.0265
+  },
+  {
+    "name": "Abrazo Arizona Heart Hospital",
+    "address": "1930 E Thomas Rd",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85016",
+    "siteType": "HOSPITAL",
+    "lat": 33.4804,
+    "lng": -112.0425
+  },
+  {
+    "name": "Phoenix Children's Hospital",
+    "address": "1919 E Thomas Rd",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85016",
+    "siteType": "HOSPITAL",
+    "lat": 33.4801,
+    "lng": -112.0428
+  },
+  {
+    "name": "Tucson Medical Center",
+    "address": "5301 E Grant Rd",
+    "city": "Tucson",
+    "state": "AZ",
+    "zipCode": "85712",
+    "siteType": "HOSPITAL",
+    "lat": 32.2503,
+    "lng": -110.8834
+  },
+  {
+    "name": "Banner - University Medical Center Tucson",
+    "address": "1501 N Campbell Ave",
+    "city": "Tucson",
+    "state": "AZ",
+    "zipCode": "85724",
+    "siteType": "HOSPITAL",
+    "lat": 32.2417,
+    "lng": -110.9445
+  },
+  {
+    "name": "Yuma Regional Medical Center",
+    "address": "2400 S Avenue A",
+    "city": "Yuma",
+    "state": "AZ",
+    "zipCode": "85364",
+    "siteType": "HOSPITAL",
+    "lat": 32.6925,
+    "lng": -114.6244
+  },
+  {
+    "name": "Flagstaff Medical Center",
+    "address": "1200 N Beaver St",
+    "city": "Flagstaff",
+    "state": "AZ",
+    "zipCode": "86001",
+    "siteType": "HOSPITAL",
+    "lat": 35.2075,
+    "lng": -111.6513
+  },
+  {
+    "name": "Valley Heart Center",
+    "address": "1200 Medical Blvd",
+    "city": "Phoenix",
+    "state": "AZ",
+    "zipCode": "85004",
+    "siteType": "HOSPITAL",
+    "lat": 33.4484,
+    "lng": -112.074
+  }
+]

@@ -39,6 +39,7 @@ const NAV_CONFIG: Record<string, { title: string; items: NavItem[] }> = {
     items: [
       { href: "/rep", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
       { href: "/rep/schedule", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
+      { href: "/rep/teams", label: "Teams", icon: <Users className="h-4 w-4" /> },
       { href: "/rep/territory", label: "Territory", icon: <MapPin className="h-4 w-4" /> },
     ],
   },
@@ -48,6 +49,7 @@ const NAV_CONFIG: Record<string, { title: string; items: NavItem[] }> = {
       { href: "/company", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
       { href: "/company/requests", label: "Requests", icon: <Stethoscope className="h-4 w-4" /> },
       { href: "/company/reps", label: "Reps", icon: <Users className="h-4 w-4" /> },
+      { href: "/company/teams", label: "Teams", icon: <Users className="h-4 w-4" /> },
       { href: "/company/schedule", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
       { href: "/company/analytics", label: "Analytics", icon: <Building2 className="h-4 w-4" /> },
     ],

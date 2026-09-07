@@ -7,7 +7,8 @@ import { RequestCard, type RequestData } from "@/components/shared/request-card"
 import { Button } from "@/components/ui/button";
 import { ApiError, connectEventSource, fetchJson } from "@/lib/api-client";
 import type { FacilityDefaults, RequesterDefaults } from "@/lib/request-form-types";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, UserPlus } from "lucide-react";
+import { InviteModal } from "@/components/invitations/invite-modal";
 
 interface ProviderDashboardProps {
   userName: string;
@@ -24,6 +25,7 @@ export function ProviderDashboard({
   const [favorites, setFavorites] = useState<{ id: string }[]>([]);
   const [companies, setCompanies] = useState<{ id: string; name: string; products: string[] }[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [accessMessage, setAccessMessage] = useState<string | null>(null);
@@ -116,6 +118,10 @@ export function ProviderDashboard({
           <Button variant="outline" size="sm" onClick={loadData}>
             <RefreshCw className="h-4 w-4" />
           </Button>
+          <Button variant="outline" onClick={() => setShowInviteModal(true)}>
+            <UserPlus className="h-4 w-4" />
+            Invite
+          </Button>
           <Button onClick={() => setShowModal(true)} disabled={companies.length === 0}>
             <Plus className="h-4 w-4" />
             Request a Rep
@@ -157,6 +163,10 @@ export function ProviderDashboard({
             />
           ))}
         </div>
+      )}
+
+      {showInviteModal && (
+        <InviteModal onClose={() => setShowInviteModal(false)} />
       )}
 
       {showModal && companies.length > 0 && (

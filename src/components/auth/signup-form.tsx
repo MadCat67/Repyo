@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { BrandMark } from "@/components/shared/brand-mark";
 import {
+  FacilitySearchPicker,
+  type HealthcareSiteOption,
+} from "@/components/shared/facility-search-picker";
+import {
   LegalDocumentModal,
   ProviderAgreementSection,
   RepAgreementSection,
 } from "@/components/legal/legal-document-modal";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { ROLE_LABELS } from "@/lib/auth-utils";
@@ -65,6 +70,8 @@ function StepIndicator({
 }
 
 export function SignupForm() {
+  const searchParams = useSearchParams();
+  const inviteTokenParam = searchParams.get("invite");
   const [role, setRole] = useState<Role>("PROVIDER");
   const [providerStep, setProviderStep] = useState(1);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -76,8 +83,12 @@ export function SignupForm() {
   const [acceptTermsAndPrivacy, setAcceptTermsAndPrivacy] = useState(false);
   const [legalDocSlug, setLegalDocSlug] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [selectedSites, setSelectedSites] = useState<HealthcareSiteOption[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteBanner, setInviteBanner] = useState<string | null>(null);
+  const [inviteLockedRole, setInviteLockedRole] = useState(false);
 
   useEffect(() => {
     fetch("/api/companies/public")
@@ -92,10 +103,56 @@ export function SignupForm() {
   }, []);
 
   useEffect(() => {
+    if (!inviteTokenParam) return;
+
+    fetch(`/api/invitations/validate?token=${encodeURIComponent(inviteTokenParam)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.valid) {
+          setError(data.reason ?? "Invitation is not valid");
+          return;
+        }
+        setInviteToken(inviteTokenParam);
+        const inv = data.invitation;
+        const invitedRole = inv.targetRole as Role;
+        if (SIGNUP_ROLES.includes(invitedRole)) {
+          setRole(invitedRole);
+          setInviteLockedRole(true);
+        }
+        setInviteBanner(
+          `${inv.invitedByName ?? "A colleague"} invited you to join RepYo${
+            inv.organization?.name ? ` at ${inv.organization.name}` : ""
+          }${inv.company?.name ? ` (${inv.company.name})` : ""}.`
+        );
+        setFormValues((prev) => ({
+          ...prev,
+          ...(inv.inviteeEmail ? { email: inv.inviteeEmail } : {}),
+          ...(inv.organization?.id ? { organizationId: inv.organization.id } : {}),
+          ...(inv.company?.id ? { companyId: inv.company.id } : {}),
+        }));
+        if (inv.organization?.id) setRequestOrgAccess(false);
+        if (inv.healthcareSite) {
+          setSelectedSites([
+            {
+              id: inv.healthcareSite.id,
+              name: inv.healthcareSite.name,
+              address: "",
+              city: inv.healthcareSite.city ?? "",
+              state: inv.healthcareSite.state ?? "",
+              zipCode: "",
+            },
+          ]);
+        }
+      })
+      .catch(() => setError("Could not load invitation"));
+  }, [inviteTokenParam]);
+
+  useEffect(() => {
     setProviderStep(1);
     setAcceptProviderAuthorization(false);
     setAcceptProviderPrivacy(false);
     setAcceptTermsAndPrivacy(false);
+    setSelectedSites([]);
     setError("");
   }, [role]);
 
@@ -119,16 +176,13 @@ export function SignupForm() {
       }
     }
     if (step === 2) {
-      const required = [
-        "facilityName",
-        "facilityAddress",
-        "zipCode",
-        "facilityContactName",
-        "facilityContactPhone",
-      ];
+      if (selectedSites.length === 0) {
+        return "Select at least one hospital or clinic from the directory";
+      }
+      const required = ["facilityContactName", "facilityContactPhone"];
       for (const key of required) {
         if (!values[key]?.trim()) {
-          return "Complete all required facility fields";
+          return "Complete facility contact fields";
         }
       }
     }
@@ -151,6 +205,13 @@ export function SignupForm() {
   function handleProviderNext(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const values = captureFormValues(e.currentTarget);
+    const primary = selectedSites[0];
+    if (primary) {
+      values.facilityName = primary.name;
+      values.facilityAddress = `${primary.address}, ${primary.city}, ${primary.state} ${primary.zipCode}`;
+      values.zipCode = primary.zipCode;
+      setFormValues((prev) => ({ ...prev, ...values }));
+    }
     const stepError = validateProviderStep(providerStep, values);
     if (stepError) {
       setError(stepError);
@@ -174,6 +235,14 @@ export function SignupForm() {
     );
     form.set("acceptProviderPrivacy", acceptProviderPrivacy ? "true" : "false");
     form.set("acceptTermsAndPrivacy", acceptTermsAndPrivacy ? "true" : "false");
+    if (selectedSites.length > 0) {
+      form.set("siteIds", JSON.stringify(selectedSites.map((s) => s.id)));
+      form.set("primarySiteId", selectedSites[0].id);
+    }
+
+    if (inviteToken) {
+      form.set("inviteToken", inviteToken);
+    }
 
     const result = await signupAction(form);
 
@@ -198,11 +267,21 @@ export function SignupForm() {
           </p>
         </div>
 
+        {inviteBanner && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+            {inviteBanner}
+            <p className="mt-1 text-xs text-rose-700">
+              Accepting this invitation does not grant access to patient information.
+            </p>
+          </div>
+        )}
+
         <Select
           label="I am a..."
           name="roleDisplay"
           value={role}
           onChange={(e) => setRole(e.target.value as Role)}
+          disabled={inviteLockedRole}
           options={SIGNUP_ROLES.map((r) => ({
             value: r,
             label: ROLE_LABELS[r],
@@ -221,6 +300,10 @@ export function SignupForm() {
           }
           className="mt-4 space-y-4"
         >
+          {inviteToken && (
+            <input type="hidden" name="inviteToken" value={inviteToken} />
+          )}
+
           {error && (
             <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
@@ -293,39 +376,27 @@ export function SignupForm() {
                   Facility
                 </p>
                 <p className="mt-1 text-xs text-slate-600">
-                  Used to pre-fill request forms after signup.
+                  Search the shared directory — each hospital exists once on RepYo.
+                  You can add additional locations if needed.
                 </p>
               </div>
-              <Input
-                label="Hospital / Facility Name"
-                name="facilityName"
-                required
-                defaultValue={formValues.facilityName}
-                autoComplete="organization"
+
+              <FacilitySearchPicker
+                selected={selectedSites}
+                onChange={setSelectedSites}
+                multiple
+                organizationId={
+                  formValues.organizationId || undefined
+                }
+                label="Your hospital or clinic"
+                helperText="Most providers select one primary location. You may add more if you work at multiple sites."
               />
+
               <Input
-                label="Facility Address"
-                name="facilityAddress"
-                required
-                defaultValue={formValues.facilityAddress}
-                autoComplete="street-address"
+                label="Department / unit"
+                name="department"
+                defaultValue={formValues.department}
               />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input
-                  label="Department"
-                  name="department"
-                  defaultValue={formValues.department}
-                />
-                <Input
-                  label="Zip Code"
-                  name="zipCode"
-                  required
-                  defaultValue={formValues.zipCode}
-                  placeholder="85044"
-                  pattern="\d{5}"
-                  maxLength={5}
-                />
-              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
                   label="Facility Contact Name"
@@ -371,6 +442,7 @@ export function SignupForm() {
                 type="email"
                 required
                 defaultValue={formValues.email}
+                key={formValues.email ?? "email"}
                 autoComplete="email"
               />
               <Input
@@ -423,6 +495,16 @@ export function SignupForm() {
                 onOpenDocument={setLegalDocSlug}
               />
 
+              <input
+                type="hidden"
+                name="siteIds"
+                value={JSON.stringify(selectedSites.map((s) => s.id))}
+              />
+              <input
+                type="hidden"
+                name="primarySiteId"
+                value={selectedSites[0]?.id ?? ""}
+              />
               <input type="hidden" name="name" value={formValues.name ?? ""} />
               <input type="hidden" name="email" value={formValues.email ?? ""} />
               <input
@@ -487,6 +569,8 @@ export function SignupForm() {
                 name="email"
                 type="email"
                 required
+                defaultValue={formValues.email}
+                key={formValues.email ?? "rep-email"}
                 autoComplete="email"
               />
               <Input
@@ -525,6 +609,8 @@ export function SignupForm() {
                   label="Device Company"
                   name="companyId"
                   required
+                  defaultValue={formValues.companyId}
+                  key={formValues.companyId ?? "company"}
                   options={[
                     {
                       value: "",

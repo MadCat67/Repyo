@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  FacilitySearchPicker,
+  type HealthcareSiteOption,
+} from "@/components/shared/facility-search-picker";
 import { fetchJson } from "@/lib/api-client";
 import { PROCEDURE_TYPES, REP_STATUS_LABELS } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
@@ -26,6 +30,7 @@ interface RepProfile {
 export function RepTerritoryPage({ userName }: { userName: string }) {
   const [profile, setProfile] = useState<RepProfile | null>(null);
   const [territories, setTerritories] = useState<Territory[]>([]);
+  const [coveredSites, setCoveredSites] = useState<HealthcareSiteOption[]>([]);
   const [travelRadius, setTravelRadius] = useState(50);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -37,12 +42,16 @@ export function RepTerritoryPage({ userName }: { userName: string }) {
     setLoading(true);
     setError("");
     try {
-      const data = await fetchJson<RepProfile | null>("/api/rep/profile");
+      const [data, sites] = await Promise.all([
+        fetchJson<RepProfile | null>("/api/rep/profile"),
+        fetchJson<HealthcareSiteOption[]>("/api/rep/site-coverage"),
+      ]);
       if (!data) {
         setError("Profile not found");
         return;
       }
       setProfile(data);
+      setCoveredSites(sites ?? []);
       setTerritories(
         data.territories?.map((t) => ({
           state: t.state ?? "",
@@ -92,6 +101,13 @@ export function RepTerritoryPage({ userName }: { userName: string }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             territories: territories.filter((t) => t.state || t.county || t.zipCode),
+          }),
+        }),
+        fetchJson("/api/rep/site-coverage", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            siteIds: coveredSites.map((s) => s.id),
           }),
         }),
         fetchJson("/api/rep/profile", {
@@ -181,8 +197,23 @@ export function RepTerritoryPage({ userName }: { userName: string }) {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+          <FacilitySearchPicker
+            selected={coveredSites}
+            onChange={setCoveredSites}
+            multiple
+            label="Hospitals & clinics you cover"
+            helperText="Add every hospital or clinic where you support cases. Providers at these locations will find you when requesting a rep."
+          />
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-slate-900">Coverage Areas</h2>
+            <div>
+              <h2 className="font-semibold text-slate-900">Additional zip coverage</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Optional fallback areas when a request is not tied to a specific facility.
+              </p>
+            </div>
             <Button size="sm" variant="outline" onClick={addTerritory}>
               <Plus className="h-4 w-4" />
               Add

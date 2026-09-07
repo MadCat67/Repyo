@@ -92,6 +92,8 @@ enum PermissionChangeType {
   ORG_ADMIN_GRANTED
   ORG_ADMIN_REVOKED
   USER_VERIFICATION_DECISION
+  CALENDAR_VISIBILITY_CHANGED
+  TEAM_MEMBERSHIP_CHANGED
   TERRITORY_CHANGED
   DELEGATION_CHANGED
   ACCOUNT_STATE_CHANGED
@@ -138,6 +140,37 @@ enum KillSwitchScope {
   COMPANY
   REQUEST
   INTEGRATION
+}
+
+enum TeamCalendarVisibility {
+  SHARED_WITH_TEAM
+  HIDDEN_FROM_TEAM_PEERS
+}
+
+enum CalendarVisibilitySource {
+  TEAM_DEFAULT
+  MANAGER_OVERRIDE
+  REP_PREFERENCE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum InvitationChannel {
+  EMAIL
+  SMS
+  LINK
+  QR
+}
+
+enum InvitationType {
+  PEER
+  ADMIN
+  ORG_ADMIN
 }
 
 model User {
@@ -188,7 +221,14 @@ model User {
   authorizationRevoked    AuthorizationGrant[]  @relation("AuthorizationRevoker")
   verificationEvents      UserVerificationEvent[]
   orgAdminProfilesGranted ProviderProfile[]     @relation("OrgAdminGranter")
-  invitationsSent         OrganizationInvitation[] @relation("InvitationSender")
+  invitationsSent         PlatformInvitation[] @relation("InvitationSender")
+  invitationsRevoked      PlatformInvitation[] @relation("InvitationRevoker")
+  invitationsAccepted     PlatformInvitation[] @relation("InvitationAccepter")
+  providerSiteMemberships ProviderSiteMembership[]
+  repSiteCoverages        RepSiteCoverage[]
+  healthcareSitesCreated  HealthcareSite[]         @relation("SiteCreator")
+  managedTeams            CompanyTeam[]            @relation("TeamManager")
+  teamMemberships         CompanyTeamMember[]
 }
 
 model Company {
@@ -222,7 +262,8 @@ model Company {
   authorizationGrants AuthorizationGrant[]
   verificationEvents  UserVerificationEvent[]
   rosterEntries       PreapprovedRosterEntry[]
-  invitations         OrganizationInvitation[]
+  invitations         PlatformInvitation[]
+  teams               CompanyTeam[]
 }
 
 model Facility {
@@ -260,6 +301,19 @@ enum ProviderAccountStatus {
   ACTIVE
 }
 
+enum HealthcareSiteType {
+  HOSPITAL
+  CLINIC
+  SURGERY_CENTER
+  OTHER
+}
+
+enum HealthcareSiteStatus {
+  ACTIVE
+  PENDING_REVIEW
+  MERGED
+}
+
 model ProviderOrganization {
   id             String                   @id @default(uuid())
   name           String
@@ -287,12 +341,91 @@ model ProviderOrganization {
   authorizationGrants AuthorizationGrant[]
   verificationEvents  UserVerificationEvent[]
   rosterEntries       PreapprovedRosterEntry[]
-  invitations         OrganizationInvitation[]
+  invitations         PlatformInvitation[]
+  siteLinks           OrganizationSiteLink[]
+  providerSiteMemberships ProviderSiteMembership[]
+}
+
+model HealthcareSite {
+  id          String               @id @default(uuid())
+  slug        String               @unique
+  name        String
+  address     String
+  city        String
+  state       String
+  zipCode     String
+  phone       String?
+  lat         Float?
+  lng         Float?
+  siteType    HealthcareSiteType   @default(HOSPITAL)
+  status      HealthcareSiteStatus @default(ACTIVE)
+  createdById String?
+  verifiedAt  DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  createdBy           User?                    @relation("SiteCreator", fields: [createdById], references: [id])
+  organizationLinks   OrganizationSiteLink[]
+  providerMemberships ProviderSiteMembership[]
+  repCoverages        RepSiteCoverage[]
+  orgFacilities       ProviderOrgFacility[]
+  serviceRequests     ServiceRequest[]
+  invitations         PlatformInvitation[]
+
+  @@index([name])
+  @@index([state, city])
+  @@index([zipCode])
+  @@index([status])
+}
+
+model OrganizationSiteLink {
+  id             String   @id @default(uuid())
+  organizationId String
+  siteId         String
+  isPrimary      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization ProviderOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site         HealthcareSite       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, siteId])
+}
+
+model ProviderSiteMembership {
+  id             String   @id @default(uuid())
+  userId         String
+  siteId         String
+  organizationId String?
+  isPrimary      Boolean  @default(false)
+  jobTitle       String?
+  department     String?
+  createdAt      DateTime @default(now())
+
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site         HealthcareSite        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  organization ProviderOrganization? @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, siteId])
+  @@index([siteId])
+}
+
+model RepSiteCoverage {
+  id        String   @id @default(uuid())
+  repUserId String
+  siteId    String
+  createdAt DateTime @default(now())
+
+  rep  User           @relation(fields: [repUserId], references: [id], onDelete: Cascade)
+  site HealthcareSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([repUserId, siteId])
+  @@index([siteId])
 }
 
 model ProviderOrgFacility {
   id             String   @id @default(uuid())
   organizationId String
+  siteId         String?
   name           String
   address        String
   phone          String?
@@ -301,7 +434,10 @@ model ProviderOrgFacility {
   createdAt      DateTime @default(now())
 
   organization ProviderOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site         HealthcareSite?      @relation(fields: [siteId], references: [id])
   providers    ProviderProfile[]
+
+  @@index([siteId])
 }
 
 model OrganizationAccessRequest {
@@ -424,6 +560,38 @@ model Territory {
   @@index([state, county, zipCode])
 }
 
+model CompanyTeam {
+  id                        String                 @id @default(uuid())
+  companyId                 String
+  name                      String
+  managerUserId             String
+  defaultCalendarVisibility TeamCalendarVisibility @default(SHARED_WITH_TEAM)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manager     User                @relation("TeamManager", fields: [managerUserId], references: [id])
+  members     CompanyTeamMember[]
+  assignments ServiceRequest[]
+  invitations PlatformInvitation[]
+
+  @@index([companyId])
+  @@index([managerUserId])
+}
+
+model CompanyTeamMember {
+  id       String   @id @default(uuid())
+  teamId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  team CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
 model ServiceRequest {
   id                   String         @id @default(uuid())
   providerId           String?
@@ -431,6 +599,12 @@ model ServiceRequest {
   companyId            String
   assignedAdminId      String?
   assignedRepId        String?
+  healthcareSiteId     String?
+  teamId               String?
+  teamCalendarVisibility TeamCalendarVisibility @default(SHARED_WITH_TEAM)
+  calendarVisibilitySetById String?
+  calendarVisibilitySetAt   DateTime?
+  calendarVisibilitySource  CalendarVisibilitySource @default(TEAM_DEFAULT)
   facilityName         String
   facilityAddr         String
   facilityPhone        String?
@@ -476,6 +650,8 @@ model ServiceRequest {
   assignedAdmin  User?    @relation("AdminRequests", fields: [assignedAdminId], references: [id])
   company        Company  @relation(fields: [companyId], references: [id])
   assignedRep    User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
+  healthcareSite HealthcareSite? @relation(fields: [healthcareSiteId], references: [id])
+  team           CompanyTeam?    @relation(fields: [teamId], references: [id])
   statusLogs     RequestStatusLog[]
   routingEvents  RequestRoutingEvent[]
   phiAccessLogs  PhiAccessLog[]
@@ -708,22 +884,41 @@ model PreapprovedRosterEntry {
   @@index([email, companyId])
 }
 
-model OrganizationInvitation {
-  id             String    @id @default(uuid())
-  organizationId String?
-  companyId      String?
-  email          String
-  invitedById    String
-  token          String    @unique
-  expiresAt      DateTime
-  acceptedAt     DateTime?
-  status         String    @default("PENDING")
-  createdAt      DateTime  @default(now())
+model PlatformInvitation {
+  id                 String             @id @default(uuid())
+  token              String             @unique
+  invitedById        String
+  inviteeEmail       String?
+  inviteePhone       String?
+  targetRole         Role
+  invitationType     InvitationType     @default(PEER)
+  channel            InvitationChannel    @default(LINK)
+  status             InvitationStatus     @default(PENDING)
+  organizationId     String?
+  companyId          String?
+  teamId             String?
+  healthcareSiteId   String?
+  facilityId         String?
+  territoryContext   Json?
+  preconfig          Json?
+  expiresAt          DateTime
+  acceptedAt         DateTime?
+  acceptedByUserId   String?
+  revokedAt          DateTime?
+  revokedById        String?
+  createdAt          DateTime           @default(now())
 
-  organization ProviderOrganization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  company      Company?              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  invitedBy    User                  @relation("InvitationSender", fields: [invitedById], references: [id])
+  invitedBy      User                  @relation("InvitationSender", fields: [invitedById], references: [id])
+  revokedBy      User?                 @relation("InvitationRevoker", fields: [revokedById], references: [id])
+  acceptedByUser User?                 @relation("InvitationAccepter", fields: [acceptedByUserId], references: [id])
+  organization   ProviderOrganization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company        Company?              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  team           CompanyTeam?          @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  healthcareSite HealthcareSite?       @relation(fields: [healthcareSiteId], references: [id], onDelete: SetNull)
 
-  @@index([email, organizationId])
-  @@index([email, companyId])
+  @@index([inviteeEmail, status])
+  @@index([invitedById, createdAt])
+  @@index([organizationId, status])
+  @@index([companyId, status])
+  @@index([expiresAt])
 }

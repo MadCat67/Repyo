@@ -19,6 +19,7 @@ export type VerificationContext = {
   companyId?: string | null;
   jobTitle?: string | null;
   facilityId?: string | null;
+  invitationToken?: string | null;
 };
 
 export type VerificationResult = {
@@ -46,15 +47,43 @@ async function hasPendingInvitation(
   companyId?: string | null
 ) {
   const normalized = email.trim().toLowerCase();
-  return db.organizationInvitation.findFirst({
+  return db.platformInvitation.findFirst({
     where: {
-      email: normalized,
+      inviteeEmail: normalized,
       status: "PENDING",
       expiresAt: { gt: new Date() },
       ...(organizationId ? { organizationId } : {}),
       ...(companyId ? { companyId } : {}),
     },
   });
+}
+
+async function resolvePendingInvitation(
+  email: string,
+  organizationId?: string | null,
+  companyId?: string | null,
+  token?: string | null
+) {
+  const byEmail = await hasPendingInvitation(email, organizationId, companyId);
+  if (byEmail) return byEmail;
+
+  if (!token) return null;
+
+  const invitation = await db.platformInvitation.findFirst({
+    where: {
+      token,
+      status: "PENDING",
+      expiresAt: { gt: new Date() },
+    },
+  });
+  if (!invitation) return null;
+  if (organizationId && invitation.organizationId && invitation.organizationId !== organizationId) {
+    return null;
+  }
+  if (companyId && invitation.companyId && invitation.companyId !== companyId) {
+    return null;
+  }
+  return invitation;
 }
 
 async function hasRosterEntry(
@@ -243,7 +272,12 @@ export async function verifyProviderSignup(
   if (!org) return null;
 
   const [invitation, rosterEntry] = await Promise.all([
-    hasPendingInvitation(context.email, org.id),
+    resolvePendingInvitation(
+      context.email,
+      org.id,
+      null,
+      context.invitationToken
+    ),
     hasRosterEntry(context.email, org.id),
   ]);
 
@@ -264,9 +298,13 @@ export async function verifyProviderSignup(
   await applyProviderVerification(context, org.id, org.name, result);
 
   if (invitation && result.decision === "AUTO_APPROVED") {
-    await db.organizationInvitation.update({
+    await db.platformInvitation.update({
       where: { id: invitation.id },
-      data: { status: "ACCEPTED", acceptedAt: new Date() },
+      data: {
+        status: "ACCEPTED",
+        acceptedAt: new Date(),
+        acceptedByUserId: context.userId,
+      },
     });
   }
 
@@ -284,7 +322,12 @@ export async function verifyCompanySignup(
   if (!company) return null;
 
   const [invitation, rosterEntry] = await Promise.all([
-    hasPendingInvitation(context.email, null, company.id),
+    resolvePendingInvitation(
+      context.email,
+      null,
+      company.id,
+      context.invitationToken
+    ),
     hasRosterEntry(context.email, null, company.id),
   ]);
 
@@ -304,9 +347,13 @@ export async function verifyCompanySignup(
   await applyCompanyVerification(context, company.id, company.name, result);
 
   if (invitation && result.decision === "AUTO_APPROVED") {
-    await db.organizationInvitation.update({
+    await db.platformInvitation.update({
       where: { id: invitation.id },
-      data: { status: "ACCEPTED", acceptedAt: new Date() },
+      data: {
+        status: "ACCEPTED",
+        acceptedAt: new Date(),
+        acceptedByUserId: context.userId,
+      },
     });
   }
 
