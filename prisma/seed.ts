@@ -115,12 +115,16 @@ async function main() {
       products: ["PPM", "ICD", "CRT-D", "CRT-P", "Loop", "Leadless PPM"],
       manufacturerAliases: ["Medtronic Inc", "MDT"],
       active: true,
+      userVerificationMethod: "APPROVED_EMAIL_DOMAIN",
+      approvedEmailDomains: ["medtronic.com"],
     },
     create: {
       name: "Medtronic",
       slug: "medtronic",
       products: ["PPM", "ICD", "CRT-D", "CRT-P", "Loop", "Leadless PPM"],
       manufacturerAliases: ["Medtronic Inc", "MDT"],
+      userVerificationMethod: "APPROVED_EMAIL_DOMAIN",
+      approvedEmailDomains: ["medtronic.com"],
     },
   });
 
@@ -180,6 +184,8 @@ async function main() {
       baaExecutedAt: new Date("2025-01-01"),
       orgAgreementAt: new Date("2025-01-01"),
       phiEnabledAt: new Date("2025-01-01"),
+      userVerificationMethod: "APPROVED_EMAIL_DOMAIN",
+      approvedEmailDomains: ["valleyheart.org"],
     },
     create: {
       name: "Valley Heart System",
@@ -191,6 +197,8 @@ async function main() {
       baaExecutedAt: new Date("2025-01-01"),
       orgAgreementAt: new Date("2025-01-01"),
       phiEnabledAt: new Date("2025-01-01"),
+      userVerificationMethod: "APPROVED_EMAIL_DOMAIN",
+      approvedEmailDomains: ["valleyheart.org"],
     },
   });
 
@@ -211,14 +219,64 @@ async function main() {
 
   await db.providerOrganization.upsert({
     where: { slug: "desert-regional-pending" },
-    update: { status: "PENDING", complianceMode: "STANDARD" },
+    update: {
+      status: "PENDING",
+      complianceMode: "STANDARD",
+      userVerificationMethod: "MANUAL_ADMIN_APPROVAL",
+    },
     create: {
       name: "Desert Regional Medical",
       slug: "desert-regional-pending",
       status: "PENDING",
       complianceMode: "STANDARD",
+      userVerificationMethod: "MANUAL_ADMIN_APPROVAL",
     },
   });
+
+  const bannerOrg = await db.providerOrganization.upsert({
+    where: { slug: "banner-health" },
+    update: {
+      status: "ACTIVATED",
+      complianceMode: "PHI_ENABLED",
+      verifiedAt: new Date("2025-06-01"),
+      baaExecutedAt: new Date("2025-06-01"),
+      orgAgreementAt: new Date("2025-06-01"),
+      phiEnabledAt: new Date("2025-06-01"),
+      userVerificationMethod: "EMAIL_DOMAIN_PLUS_ADMIN_APPROVAL",
+      approvedEmailDomains: ["bannerhealth.com"],
+    },
+    create: {
+      name: "Banner Health",
+      slug: "banner-health",
+      status: "ACTIVATED",
+      complianceMode: "PHI_ENABLED",
+      contactEmail: "privacy@bannerhealth.com",
+      verifiedAt: new Date("2025-06-01"),
+      baaExecutedAt: new Date("2025-06-01"),
+      orgAgreementAt: new Date("2025-06-01"),
+      phiEnabledAt: new Date("2025-06-01"),
+      userVerificationMethod: "EMAIL_DOMAIN_PLUS_ADMIN_APPROVAL",
+      approvedEmailDomains: ["bannerhealth.com"],
+    },
+  });
+
+  const bannerFacility =
+    (await db.providerOrgFacility.findFirst({
+      where: {
+        organizationId: bannerOrg.id,
+        name: "Banner University Medical Center",
+      },
+    })) ??
+    (await db.providerOrgFacility.create({
+      data: {
+        organizationId: bannerOrg.id,
+        name: "Banner University Medical Center",
+        address: "1111 E McDowell Rd, Phoenix, AZ 85006",
+        zipCode: "85006",
+        department: "Cardiology",
+        phone: "(602) 555-0300",
+      },
+    }));
 
   const provider = await db.user.upsert({
     where: { email: "provider@demo.com" },

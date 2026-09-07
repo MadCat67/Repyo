@@ -1,0 +1,515 @@
+import { db } from "@/lib/db";
+import type {
+  AuthorizationSource,
+  ProviderAccountStatus,
+  ProviderOrgStatus,
+  UserAccountState,
+  UserVerificationMethod,
+  VerificationDecision,
+} from "@prisma/client";
+import { emailMatchesApprovedDomain } from "./email-domain";
+import { logPermissionChange } from "@/lib/security/audit";
+import { recordAuthorizationGrant } from "@/lib/authorization/grants";
+
+export type VerificationContext = {
+  userId: string;
+  email: string;
+  legalName: string;
+  organizationId?: string | null;
+  companyId?: string | null;
+  jobTitle?: string | null;
+  facilityId?: string | null;
+};
+
+export type VerificationResult = {
+  decision: VerificationDecision;
+  accountStatus: ProviderAccountStatus;
+  userAccountState: UserAccountState;
+  reason: string;
+  source: AuthorizationSource;
+  unusual: boolean;
+};
+
+type TenantVerificationConfig = {
+  id: string;
+  userVerificationMethod: UserVerificationMethod;
+  approvedEmailDomains: string[];
+  ssoEnabled: boolean;
+  scimEnabled: boolean;
+  status?: ProviderOrgStatus | null;
+  accessEnabled?: boolean;
+};
+
+async function hasPendingInvitation(
+  email: string,
+  organizationId?: string | null,
+  companyId?: string | null
+) {
+  const normalized = email.trim().toLowerCase();
+  return db.organizationInvitation.findFirst({
+    where: {
+      email: normalized,
+      status: "PENDING",
+      expiresAt: { gt: new Date() },
+      ...(organizationId ? { organizationId } : {}),
+      ...(companyId ? { companyId } : {}),
+    },
+  });
+}
+
+async function hasRosterEntry(
+  email: string,
+  organizationId?: string | null,
+  companyId?: string | null
+) {
+  const normalized = email.trim().toLowerCase();
+  return db.preapprovedRosterEntry.findFirst({
+    where: {
+      email: normalized,
+      active: true,
+      ...(organizationId ? { organizationId } : {}),
+      ...(companyId ? { companyId } : {}),
+    },
+  });
+}
+
+function orgIsLive(config: TenantVerificationConfig): boolean {
+  return config.status === "ACTIVATED" || config.status === "VERIFIED";
+}
+
+export function evaluateVerificationMethod(
+  config: TenantVerificationConfig,
+  email: string,
+  options?: {
+    hasInvitation?: boolean;
+    hasRosterEntry?: boolean;
+  }
+): VerificationResult {
+  const domainMatch = emailMatchesApprovedDomain(
+    email,
+    config.approvedEmailDomains
+  );
+  const live = orgIsLive(config);
+  const unusual = !domainMatch && config.approvedEmailDomains.length > 0;
+
+  switch (config.userVerificationMethod) {
+    case "APPROVED_EMAIL_DOMAIN": {
+      if (domainMatch && live && config.accessEnabled !== false) {
+        return {
+          decision: "AUTO_APPROVED",
+          accountStatus: "ACTIVE",
+          userAccountState: "VERIFIED",
+          reason: "Email domain matches approved organization domain",
+          source: "SIGNUP_VERIFICATION",
+          unusual: false,
+        };
+      }
+      if (!domainMatch && config.approvedEmailDomains.length > 0) {
+        return {
+          decision: "REJECTED",
+          accountStatus: "LIMITED",
+          userAccountState: "REGISTERED",
+          reason: "Email domain is not on the approved list for this organization",
+          source: "SIGNUP_VERIFICATION",
+          unusual: true,
+        };
+      }
+      return {
+        decision: "PENDING_REVIEW",
+        accountStatus: "PENDING_APPROVAL",
+        userAccountState: "REGISTERED",
+        reason: "Organization requires manual review",
+        source: "SIGNUP_VERIFICATION",
+        unusual: true,
+      };
+    }
+
+    case "EMAIL_DOMAIN_PLUS_ADMIN_APPROVAL": {
+      if (!domainMatch && config.approvedEmailDomains.length > 0) {
+        return {
+          decision: "REJECTED",
+          accountStatus: "LIMITED",
+          userAccountState: "REGISTERED",
+          reason: "Email domain is not approved for this organization",
+          source: "SIGNUP_VERIFICATION",
+          unusual: true,
+        };
+      }
+      return {
+        decision: "PENDING_REVIEW",
+        accountStatus: "PENDING_APPROVAL",
+        userAccountState: "REGISTERED",
+        reason: domainMatch
+          ? "Approved domain — pending administrator confirmation"
+          : "Pending administrator approval",
+        source: "SIGNUP_VERIFICATION",
+        unusual: !domainMatch,
+      };
+    }
+
+    case "INVITATION_ONLY": {
+      if (options?.hasInvitation) {
+        return {
+          decision: live ? "AUTO_APPROVED" : "PENDING_REVIEW",
+          accountStatus: live ? "ACTIVE" : "PENDING_APPROVAL",
+          userAccountState: live ? "VERIFIED" : "REGISTERED",
+          reason: "Valid invitation on file",
+          source: "INVITATION",
+          unusual: false,
+        };
+      }
+      return {
+        decision: "REQUIRES_INVITATION",
+        accountStatus: "LIMITED",
+        userAccountState: "REGISTERED",
+        reason: "This organization requires an invitation to sign up",
+        source: "SIGNUP_VERIFICATION",
+        unusual: true,
+      };
+    }
+
+    case "PREAPPROVED_ROSTER": {
+      if (options?.hasRosterEntry) {
+        return {
+          decision: "AUTO_APPROVED",
+          accountStatus: "ACTIVE",
+          userAccountState: "VERIFIED",
+          reason: "User found on preapproved roster",
+          source: "ROSTER_IMPORT",
+          unusual: false,
+        };
+      }
+      return {
+        decision: "PENDING_REVIEW",
+        accountStatus: "PENDING_APPROVAL",
+        userAccountState: "REGISTERED",
+        reason: "User not found on preapproved roster — sent for review",
+        source: "SIGNUP_VERIFICATION",
+        unusual: true,
+      };
+    }
+
+    case "SSO":
+      return {
+        decision: "REQUIRES_INVITATION",
+        accountStatus: "LIMITED",
+        userAccountState: "REGISTERED",
+        reason: "This organization uses SSO — sign in through your hospital identity provider",
+        source: "SSO_PROVISIONING",
+        unusual: false,
+      };
+
+    case "SCIM":
+      return {
+        decision: "REQUIRES_INVITATION",
+        accountStatus: "LIMITED",
+        userAccountState: "REGISTERED",
+        reason: "Accounts are provisioned by your organization's directory (SCIM)",
+        source: "SCIM_PROVISIONING",
+        unusual: false,
+      };
+
+    case "API_DIRECTORY_VERIFICATION":
+      return {
+        decision: "PENDING_REVIEW",
+        accountStatus: "PENDING_APPROVAL",
+        userAccountState: "REGISTERED",
+        reason: "Pending directory verification with organization systems",
+        source: "API_DIRECTORY",
+        unusual: false,
+      };
+
+    case "MANUAL_ADMIN_APPROVAL":
+    default:
+      return {
+        decision: "PENDING_REVIEW",
+        accountStatus: "PENDING_APPROVAL",
+        userAccountState: "REGISTERED",
+        reason: "Pending administrator approval",
+        source: "SIGNUP_VERIFICATION",
+        unusual,
+      };
+  }
+}
+
+export async function verifyProviderSignup(
+  context: VerificationContext
+): Promise<VerificationResult | null> {
+  if (!context.organizationId) return null;
+
+  const org = await db.providerOrganization.findUnique({
+    where: { id: context.organizationId },
+  });
+  if (!org) return null;
+
+  const [invitation, rosterEntry] = await Promise.all([
+    hasPendingInvitation(context.email, org.id),
+    hasRosterEntry(context.email, org.id),
+  ]);
+
+  const result = evaluateVerificationMethod(
+    {
+      id: org.id,
+      userVerificationMethod: org.userVerificationMethod,
+      approvedEmailDomains: org.approvedEmailDomains,
+      ssoEnabled: org.ssoEnabled,
+      scimEnabled: org.scimEnabled,
+      status: org.status,
+      accessEnabled: org.accessEnabled,
+    },
+    context.email,
+    { hasInvitation: Boolean(invitation), hasRosterEntry: Boolean(rosterEntry) }
+  );
+
+  await applyProviderVerification(context, org.id, org.name, result);
+
+  if (invitation && result.decision === "AUTO_APPROVED") {
+    await db.organizationInvitation.update({
+      where: { id: invitation.id },
+      data: { status: "ACCEPTED", acceptedAt: new Date() },
+    });
+  }
+
+  return result;
+}
+
+export async function verifyCompanySignup(
+  context: VerificationContext
+): Promise<VerificationResult | null> {
+  if (!context.companyId) return null;
+
+  const company = await db.company.findUnique({
+    where: { id: context.companyId },
+  });
+  if (!company) return null;
+
+  const [invitation, rosterEntry] = await Promise.all([
+    hasPendingInvitation(context.email, null, company.id),
+    hasRosterEntry(context.email, null, company.id),
+  ]);
+
+  const result = evaluateVerificationMethod(
+    {
+      id: company.id,
+      userVerificationMethod: company.userVerificationMethod,
+      approvedEmailDomains: company.approvedEmailDomains,
+      ssoEnabled: company.ssoEnabled,
+      scimEnabled: company.scimEnabled,
+      accessEnabled: company.accessEnabled,
+    },
+    context.email,
+    { hasInvitation: Boolean(invitation), hasRosterEntry: Boolean(rosterEntry) }
+  );
+
+  await applyCompanyVerification(context, company.id, company.name, result);
+
+  if (invitation && result.decision === "AUTO_APPROVED") {
+    await db.organizationInvitation.update({
+      where: { id: invitation.id },
+      data: { status: "ACCEPTED", acceptedAt: new Date() },
+    });
+  }
+
+  return result;
+}
+
+async function applyProviderVerification(
+  context: VerificationContext,
+  organizationId: string,
+  organizationName: string,
+  result: VerificationResult
+) {
+  const now = new Date();
+
+  await db.userVerificationEvent.create({
+    data: {
+      userId: context.userId,
+      email: context.email.trim().toLowerCase(),
+      organizationId,
+      verificationMethod: (
+        await db.providerOrganization.findUnique({
+          where: { id: organizationId },
+          select: { userVerificationMethod: true },
+        })
+      )!.userVerificationMethod,
+      decision: result.decision,
+      reason: result.reason,
+      source: result.source,
+      metadata: { unusual: result.unusual, jobTitle: context.jobTitle },
+    },
+  });
+
+  await db.providerProfile.update({
+    where: { userId: context.userId },
+    data: {
+      accountStatus: result.accountStatus,
+      verificationDecision: result.decision,
+      verificationSource: result.source,
+      identityVerifiedAt:
+        result.decision === "AUTO_APPROVED" ? now : undefined,
+      jobTitle: context.jobTitle ?? undefined,
+    },
+  });
+
+  if (result.userAccountState === "VERIFIED") {
+    await db.user.update({
+      where: { id: context.userId },
+      data: { accountState: "VERIFIED", verifiedAt: now },
+    });
+  }
+
+  if (result.decision === "AUTO_APPROVED") {
+    await recordAuthorizationGrant({
+      userId: context.userId,
+      organizationId,
+      grantType: "ORG_ACCOUNT_ACCESS",
+      source: result.source,
+      ownerLabel: organizationName,
+      metadata: {
+        verificationDecision: result.decision,
+        email: context.email,
+        facilityId: context.facilityId,
+      },
+    });
+  }
+
+  await logPermissionChange({
+    targetUserId: context.userId,
+    changedById: context.userId,
+    changeType: "USER_VERIFICATION_DECISION",
+    beforeState: { accountStatus: "LIMITED" },
+    afterState: {
+      accountStatus: result.accountStatus,
+      decision: result.decision,
+      organizationId,
+      source: result.source,
+    },
+    reason: result.reason,
+  });
+}
+
+async function applyCompanyVerification(
+  context: VerificationContext,
+  companyId: string,
+  companyName: string,
+  result: VerificationResult
+) {
+  const now = new Date();
+
+  await db.userVerificationEvent.create({
+    data: {
+      userId: context.userId,
+      email: context.email.trim().toLowerCase(),
+      companyId,
+      verificationMethod: (
+        await db.company.findUnique({
+          where: { id: companyId },
+          select: { userVerificationMethod: true },
+        })
+      )!.userVerificationMethod,
+      decision: result.decision,
+      reason: result.reason,
+      source: result.source,
+      metadata: { unusual: result.unusual },
+    },
+  });
+
+  if (result.userAccountState === "VERIFIED") {
+    await db.user.update({
+      where: { id: context.userId },
+      data: { accountState: "VERIFIED", verifiedAt: now },
+    });
+
+    await db.repProfile.update({
+      where: { userId: context.userId },
+      data: { credentialStatus: "ACTIVE" },
+    });
+  } else if (result.decision === "PENDING_REVIEW") {
+    await db.repProfile.update({
+      where: { userId: context.userId },
+      data: { credentialStatus: "PENDING" },
+    });
+  }
+
+  if (result.decision === "AUTO_APPROVED") {
+    await recordAuthorizationGrant({
+      userId: context.userId,
+      companyId,
+      grantType: "COMPANY_ACCOUNT_ACCESS",
+      source: result.source,
+      ownerLabel: companyName,
+      metadata: {
+        verificationDecision: result.decision,
+        email: context.email,
+      },
+    });
+  }
+
+  await logPermissionChange({
+    targetUserId: context.userId,
+    changedById: context.userId,
+    changeType: "USER_VERIFICATION_DECISION",
+    beforeState: { credentialStatus: "PENDING" },
+    afterState: {
+      decision: result.decision,
+      companyId,
+      source: result.source,
+    },
+    reason: result.reason,
+  });
+}
+
+export async function approveProviderUser(
+  targetUserId: string,
+  approvedById: string,
+  organizationId: string,
+  reason?: string
+) {
+  const profile = await db.providerProfile.findUnique({
+    where: { userId: targetUserId },
+    include: { organization: true },
+  });
+  if (!profile || profile.organizationId !== organizationId) {
+    throw new Error("Provider not found in organization");
+  }
+
+  const before = {
+    accountStatus: profile.accountStatus,
+    isOrgAdministrator: profile.isOrgAdministrator,
+  };
+
+  const now = new Date();
+  await db.providerProfile.update({
+    where: { userId: targetUserId },
+    data: {
+      accountStatus: "ACTIVE",
+      verificationDecision: "AUTO_APPROVED",
+      verificationSource: "ADMIN_GRANT",
+      identityVerifiedAt: now,
+    },
+  });
+
+  await db.user.update({
+    where: { id: targetUserId },
+    data: { accountState: "VERIFIED", verifiedAt: now },
+  });
+
+  await recordAuthorizationGrant({
+    userId: targetUserId,
+    grantedById: approvedById,
+    organizationId,
+    grantType: "ORG_ACCOUNT_ACCESS",
+    source: "ADMIN_GRANT",
+    ownerLabel: profile.organization?.name,
+    metadata: { approvedBy: approvedById },
+  });
+
+  await logPermissionChange({
+    targetUserId,
+    changedById: approvedById,
+    changeType: "USER_VERIFICATION_DECISION",
+    beforeState: before,
+    afterState: { accountStatus: "ACTIVE", decision: "AUTO_APPROVED" },
+    reason: reason ?? "Administrator approved user access",
+  });
+}

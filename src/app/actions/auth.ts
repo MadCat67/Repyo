@@ -9,6 +9,11 @@ import {
   PROVIDER_PRIVACY_SLUGS,
   REP_REQUIRED_SLUGS,
 } from "@/lib/legal/documents";
+import {
+  evaluateVerificationMethod,
+  verifyCompanySignup,
+  verifyProviderSignup,
+} from "@/lib/verification/user-verification";
 import { signupSchema } from "@/lib/validations";
 import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
@@ -123,6 +128,55 @@ export async function signupAction(formData: FormData) {
     });
   }
 
+  if (role === "PROVIDER" && linkedOrganizationId) {
+    const org = await db.providerOrganization.findUnique({
+      where: { id: linkedOrganizationId },
+    });
+    if (org) {
+      const preview = evaluateVerificationMethod(
+        {
+          id: org.id,
+          userVerificationMethod: org.userVerificationMethod,
+          approvedEmailDomains: org.approvedEmailDomains,
+          ssoEnabled: org.ssoEnabled,
+          scimEnabled: org.scimEnabled,
+          status: org.status,
+          accessEnabled: org.accessEnabled,
+        },
+        normalizedEmail
+      );
+      if (preview.decision === "REJECTED") {
+        return { error: preview.reason };
+      }
+      if (preview.decision === "REQUIRES_INVITATION") {
+        return { error: preview.reason };
+      }
+    }
+  }
+
+  if (["REP", "COMPANY_ADMIN"].includes(role) && companyId) {
+    const company = await db.company.findUnique({ where: { id: companyId } });
+    if (company) {
+      const preview = evaluateVerificationMethod(
+        {
+          id: company.id,
+          userVerificationMethod: company.userVerificationMethod,
+          approvedEmailDomains: company.approvedEmailDomains,
+          ssoEnabled: company.ssoEnabled,
+          scimEnabled: company.scimEnabled,
+          accessEnabled: company.accessEnabled,
+        },
+        normalizedEmail
+      );
+      if (preview.decision === "REJECTED") {
+        return { error: preview.reason };
+      }
+      if (preview.decision === "REQUIRES_INVITATION") {
+        return { error: preview.reason };
+      }
+    }
+  }
+
   let organizationName: string | null = null;
   if (linkedOrganizationId) {
     const org = await db.providerOrganization.findUnique({
@@ -208,6 +262,35 @@ export async function signupAction(formData: FormData) {
       legalName,
       role,
       signatureText: `${legalName} — account signup acceptance`,
+    });
+  }
+
+  if (role === "PROVIDER" && linkedOrganizationId) {
+    await verifyProviderSignup({
+      userId: user.id,
+      email: normalizedEmail,
+      legalName,
+      organizationId: linkedOrganizationId,
+      jobTitle: department?.trim() ?? null,
+      facilityId: null,
+    });
+
+    await db.organizationAccessRequest.updateMany({
+      where: {
+        email: normalizedEmail,
+        organizationId: linkedOrganizationId,
+        status: "PENDING",
+      },
+      data: { userId: user.id },
+    });
+  }
+
+  if (["REP", "COMPANY_ADMIN"].includes(role) && companyId) {
+    await verifyCompanySignup({
+      userId: user.id,
+      email: normalizedEmail,
+      legalName,
+      companyId,
     });
   }
 

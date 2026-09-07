@@ -19,6 +19,16 @@ export async function PATCH(
   if (body.status) data.status = body.status;
   if (body.complianceMode) data.complianceMode = body.complianceMode;
   if (body.contactEmail !== undefined) data.contactEmail = body.contactEmail;
+  if (body.userVerificationMethod) data.userVerificationMethod = body.userVerificationMethod;
+  if (body.approvedEmailDomains !== undefined) {
+    data.approvedEmailDomains = Array.isArray(body.approvedEmailDomains)
+      ? body.approvedEmailDomains.map((d: string) =>
+          d.trim().toLowerCase().replace(/^@/, "")
+        )
+      : [];
+  }
+  if (body.ssoEnabled !== undefined) data.ssoEnabled = Boolean(body.ssoEnabled);
+  if (body.scimEnabled !== undefined) data.scimEnabled = Boolean(body.scimEnabled);
 
   if (body.status === "VERIFIED" && !body.skipVerifiedAt) {
     data.verifiedAt = new Date();

@@ -8,6 +8,12 @@ export type SessionUser = {
   adminPermissions?: string[];
 };
 
+export const ORG_ADMIN_PERMISSIONS = {
+  MANAGE_ORG_USERS: "MANAGE_ORG_USERS",
+  APPROVE_USERS: "APPROVE_USERS",
+  MANAGE_ORG_SETTINGS: "MANAGE_ORG_SETTINGS",
+} as const;
+
 export const ADMIN_PERMISSIONS = {
   MANAGE_REPS: "MANAGE_REPS",
   MANAGE_REQUESTS: "MANAGE_REQUESTS",

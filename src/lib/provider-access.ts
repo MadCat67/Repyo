@@ -39,6 +39,10 @@ export async function getProviderAccess(
 
   const canSubmitRequests =
     profile.onboardingComplete &&
+    profile.accountStatus === "ACTIVE";
+
+  const canSubmitLimitedRequests =
+    profile.onboardingComplete &&
     ["ACTIVE", "LIMITED"].includes(profile.accountStatus);
 
   const canSubmitPhi =
@@ -50,7 +54,10 @@ export async function getProviderAccess(
   const isLimitedMode = !canSubmitPhi;
 
   let message: string | null = null;
-  if (!profile.onboardingComplete) {
+  if (profile.accountStatus === "PENDING_APPROVAL") {
+    message =
+      "Your account is pending approval by your organization administrator. You can explore RepYo, but full access will be enabled after verification.";
+  } else if (!profile.onboardingComplete) {
     message = "Complete onboarding to start using GoRepYo.";
   } else if (!org) {
     message =
@@ -71,7 +78,7 @@ export async function getProviderAccess(
     complianceMode: org?.complianceMode ?? null,
     phiEnabled,
     canSubmitPhi,
-    canSubmitRequests,
+    canSubmitRequests: canSubmitLimitedRequests,
     isLimitedMode,
     message,
   };

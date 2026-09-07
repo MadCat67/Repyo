@@ -224,6 +224,21 @@ export const updateCompanySchema = z.object({
   name: z.string().min(2).optional(),
   products: z.array(z.string()).optional(),
   active: z.boolean().optional(),
+  userVerificationMethod: z
+    .enum([
+      "MANUAL_ADMIN_APPROVAL",
+      "APPROVED_EMAIL_DOMAIN",
+      "EMAIL_DOMAIN_PLUS_ADMIN_APPROVAL",
+      "INVITATION_ONLY",
+      "PREAPPROVED_ROSTER",
+      "SSO",
+      "SCIM",
+      "API_DIRECTORY_VERIFICATION",
+    ])
+    .optional(),
+  approvedEmailDomains: z.array(z.string()).optional(),
+  ssoEnabled: z.boolean().optional(),
+  scimEnabled: z.boolean().optional(),
 });
 
 export const updateUserSchema = z.object({

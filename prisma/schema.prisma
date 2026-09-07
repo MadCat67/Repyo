@@ -89,6 +89,9 @@ enum PhiAccessType {
 enum PermissionChangeType {
   ROLE_CHANGED
   ADMIN_PERMISSIONS_CHANGED
+  ORG_ADMIN_GRANTED
+  ORG_ADMIN_REVOKED
+  USER_VERIFICATION_DECISION
   TERRITORY_CHANGED
   DELEGATION_CHANGED
   ACCOUNT_STATE_CHANGED
@@ -96,6 +99,36 @@ enum PermissionChangeType {
   MFA_ENABLED
   MFA_DISABLED
   SESSION_REVOKED
+}
+
+enum UserVerificationMethod {
+  MANUAL_ADMIN_APPROVAL
+  APPROVED_EMAIL_DOMAIN
+  EMAIL_DOMAIN_PLUS_ADMIN_APPROVAL
+  INVITATION_ONLY
+  PREAPPROVED_ROSTER
+  SSO
+  SCIM
+  API_DIRECTORY_VERIFICATION
+}
+
+enum VerificationDecision {
+  AUTO_APPROVED
+  PENDING_REVIEW
+  REJECTED
+  REQUIRES_INVITATION
+}
+
+enum AuthorizationSource {
+  SIGNUP_VERIFICATION
+  ADMIN_GRANT
+  SSO_PROVISIONING
+  SCIM_PROVISIONING
+  API_DIRECTORY
+  ROSTER_IMPORT
+  INVITATION
+  SUPER_ADMIN
+  SYSTEM
 }
 
 enum KillSwitchScope {
@@ -150,6 +183,12 @@ model User {
   permissionChangesBy     PermissionChangeLog[] @relation("PermissionChangedBy")
   killSwitchesActivated   SecurityKillSwitch[]  @relation("KillSwitchActivator")
   agreementAcceptances    AgreementAcceptance[]
+  authorizationGrants     AuthorizationGrant[]  @relation("AuthorizationGrantee")
+  authorizationGrantsMade AuthorizationGrant[]  @relation("AuthorizationGranter")
+  authorizationRevoked    AuthorizationGrant[]  @relation("AuthorizationRevoker")
+  verificationEvents      UserVerificationEvent[]
+  orgAdminProfilesGranted ProviderProfile[]     @relation("OrgAdminGranter")
+  invitationsSent         OrganizationInvitation[] @relation("InvitationSender")
 }
 
 model Company {
@@ -170,12 +209,20 @@ model Company {
   salesforceConnectedAt       DateTime?
   salesforceDeviceObject      String?  @default("Implant_Device__c")
   salesforceCaseObject        String?  @default("Case")
+  userVerificationMethod      UserVerificationMethod @default(MANUAL_ADMIN_APPROVAL)
+  approvedEmailDomains        String[] @default([])
+  ssoEnabled                  Boolean  @default(false)
+  scimEnabled                 Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   users           User[]
   serviceRequests ServiceRequest[]
   facilities      Facility[]
+  authorizationGrants AuthorizationGrant[]
+  verificationEvents  UserVerificationEvent[]
+  rosterEntries       PreapprovedRosterEntry[]
+  invitations         OrganizationInvitation[]
 }
 
 model Facility {
@@ -227,12 +274,20 @@ model ProviderOrganization {
   killSwitchAt   DateTime?
   killSwitchReason String?
   verifiedAt     DateTime?
+  userVerificationMethod UserVerificationMethod @default(MANUAL_ADMIN_APPROVAL)
+  approvedEmailDomains   String[]               @default([])
+  ssoEnabled             Boolean                @default(false)
+  scimEnabled            Boolean                @default(false)
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
 
   facilities     ProviderOrgFacility[]
   providers      ProviderProfile[]
   accessRequests OrganizationAccessRequest[]
+  authorizationGrants AuthorizationGrant[]
+  verificationEvents  UserVerificationEvent[]
+  rosterEntries       PreapprovedRosterEntry[]
+  invitations         OrganizationInvitation[]
 }
 
 model ProviderOrgFacility {
@@ -274,6 +329,13 @@ model ProviderProfile {
   organizationId       String?
   facilityId           String?
   accountStatus        ProviderAccountStatus @default(LIMITED)
+  jobTitle             String?
+  isOrgAdministrator   Boolean               @default(false)
+  orgAdminGrantedById  String?
+  orgAdminGrantedAt    DateTime?
+  verificationDecision VerificationDecision?
+  verificationSource   AuthorizationSource?
+  identityVerifiedAt   DateTime?
   workEmail            String?
   workEmailVerified    Boolean  @default(false)
   termsAcceptedAt      DateTime?
@@ -293,6 +355,7 @@ model ProviderProfile {
 
   organization ProviderOrganization? @relation(fields: [organizationId], references: [id])
   orgFacility  ProviderOrgFacility?  @relation(fields: [facilityId], references: [id])
+  orgAdminGrantedBy User?            @relation("OrgAdminGranter", fields: [orgAdminGrantedById], references: [id])
 }
 
 enum AvailabilityBlockType {
@@ -573,4 +636,94 @@ model AgreementAcceptance {
 
   @@index([userId, acceptedAt])
   @@index([documentId])
+}
+
+model AuthorizationGrant {
+  id             String              @id @default(uuid())
+  userId         String
+  grantedById    String?
+  organizationId String?
+  companyId      String?
+  facilityId     String?
+  grantType      String
+  permissions    String[]            @default([])
+  source         AuthorizationSource
+  ownerLabel     String?
+  metadata       Json?
+  grantedAt      DateTime            @default(now())
+  revokedAt      DateTime?
+  revokedById    String?
+
+  user         User                  @relation("AuthorizationGrantee", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy    User?                 @relation("AuthorizationGranter", fields: [grantedById], references: [id])
+  revokedBy    User?                 @relation("AuthorizationRevoker", fields: [revokedById], references: [id])
+  organization ProviderOrganization? @relation(fields: [organizationId], references: [id])
+  company      Company?              @relation(fields: [companyId], references: [id])
+
+  @@index([userId, grantedAt])
+  @@index([organizationId])
+  @@index([companyId])
+}
+
+model UserVerificationEvent {
+  id                 String                 @id @default(uuid())
+  userId             String
+  email              String
+  organizationId     String?
+  companyId          String?
+  verificationMethod UserVerificationMethod
+  decision           VerificationDecision
+  reason             String?
+  source             AuthorizationSource    @default(SYSTEM)
+  metadata           Json?
+  createdAt          DateTime               @default(now())
+
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization ProviderOrganization? @relation(fields: [organizationId], references: [id])
+  company      Company?              @relation(fields: [companyId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([organizationId])
+  @@index([companyId])
+}
+
+model PreapprovedRosterEntry {
+  id             String              @id @default(uuid())
+  organizationId String?
+  companyId      String?
+  email          String
+  name           String?
+  jobTitle       String?
+  facilityId     String?
+  active         Boolean             @default(true)
+  importedById   String?
+  source         AuthorizationSource @default(ROSTER_IMPORT)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization ProviderOrganization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company?              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([email, organizationId])
+  @@index([email, companyId])
+}
+
+model OrganizationInvitation {
+  id             String    @id @default(uuid())
+  organizationId String?
+  companyId      String?
+  email          String
+  invitedById    String
+  token          String    @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  status         String    @default("PENDING")
+  createdAt      DateTime  @default(now())
+
+  organization ProviderOrganization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company?              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invitedBy    User                  @relation("InvitationSender", fields: [invitedById], references: [id])
+
+  @@index([email, organizationId])
+  @@index([email, companyId])
 }
