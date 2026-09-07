@@ -13,6 +13,11 @@ import {
   isRepLocationSharingActive,
 } from "./rep-availability";
 import { distanceMiles, estimateEtaMinutes } from "./utils";
+import {
+  GENERIC_NOTIFICATION,
+  logPhiAccess,
+  logRoutingEvent,
+} from "./security/audit";
 
 export interface RoutingCriteria {
   companyId: string;
@@ -186,8 +191,14 @@ export async function findEligibleReps(
 export async function assignRepToRequest(
   requestId: string,
   repId: string,
-  criteria: RoutingCriteria
+  criteria: RoutingCriteria,
+  actor?: { id: string; role: import("@prisma/client").Role }
 ): Promise<{ assigned: boolean; repName?: string; error?: string }> {
+  const existing = await db.serviceRequest.findUnique({
+    where: { id: requestId },
+    select: { assignedRepId: true, companyId: true },
+  });
+
   const scheduledAt = criteria.scheduledAt ?? new Date();
 
   const rep = await db.user.findFirst({
@@ -262,13 +273,49 @@ export async function assignRepToRequest(
     db.notification.create({
       data: {
         userId: repId,
-        title: "Rep Request Assigned",
-        body: `You have been assigned a request at ${criteria.facilityName}`,
+        title: GENERIC_NOTIFICATION.assigned.title,
+        body: GENERIC_NOTIFICATION.assigned.body,
         type: "REQUEST_ASSIGNED",
         data: { requestId },
       },
     }),
   ]);
+
+  const isReassign =
+    existing?.assignedRepId && existing.assignedRepId !== repId;
+
+  await logRoutingEvent({
+    requestId,
+    eventType: isReassign ? "ADMIN_REASSIGNED" : "REP_AUTO_ASSIGNED",
+    actorId: actor?.id,
+    actorRole: actor?.role,
+    companyId: existing?.companyId ?? criteria.companyId,
+    targetUserId: repId,
+    metadata: {
+      previousRepId: existing?.assignedRepId ?? null,
+    },
+  });
+
+  await logPhiAccess({
+    requestId,
+    userId: repId,
+    userRole: "REP",
+    accessType: "NOTIFICATION_SENT",
+    companyId: existing?.companyId ?? criteria.companyId,
+    metadata: { notificationType: "REQUEST_ASSIGNED" },
+  });
+
+  if (isReassign && existing?.assignedRepId) {
+    await logRoutingEvent({
+      requestId,
+      eventType: "REQUEST_REROUTED",
+      actorId: actor?.id,
+      actorRole: actor?.role,
+      companyId: existing.companyId,
+      targetUserId: repId,
+      metadata: { fromRepId: existing.assignedRepId, toRepId: repId },
+    });
+  }
 
   realtimeBus.emit("request:updated", { requestId });
   realtimeBus.emit(`user:${repId}`, {

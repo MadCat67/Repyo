@@ -32,6 +32,8 @@ export interface RequestData {
   deviceName?: string | null;
   deviceSerial?: string | null;
   crmLookupStatus?: string | null;
+  phiRestricted?: boolean;
+  identifiersHidden?: boolean;
   statusLogs?: { status: string; createdAt: string; note?: string | null }[];
 }
 
@@ -76,6 +78,11 @@ export function RequestCard({
             <p className="mt-1 text-sm text-slate-600">{request.procedureType}</p>
             {request.facilityZipCode && (
               <p className="text-xs text-slate-500">Zip {request.facilityZipCode}</p>
+            )}
+            {request.identifiersHidden && (role === "rep" || role === "company") && (
+              <p className="text-xs font-medium text-amber-700">
+                Patient identifiers hidden until request is accepted
+              </p>
             )}
             {role === "company" && request.provider && (
               <p className="text-xs text-slate-500">

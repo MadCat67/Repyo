@@ -1,12 +1,23 @@
 import { auth } from "@/lib/auth";
 import { findMatchingAdmin } from "@/lib/admin-matching";
 import { db } from "@/lib/db";
-import { encryptPHI, encryptDate, decryptPHI, decryptDate } from "@/lib/encryption";
-import { getDelegatedAdminIdsForRep } from "@/lib/admin-matching";
+import { encryptPHI, encryptDate } from "@/lib/encryption";
 import { assignRepToRequest, findEligibleReps } from "@/lib/routing-engine";
 import { createSalesforceCase, findCompanyByManufacturer, lookupPatientDevice } from "@/lib/salesforce";
 import { createRequestSchemaForPhi } from "@/lib/validations";
 import { getProviderAccess } from "@/lib/provider-access";
+import { getDelegatedAdminIdsForRep } from "@/lib/admin-matching";
+import {
+  GENERIC_NOTIFICATION,
+  logPhiAccess,
+  logRoutingEvent,
+  safeStatusNote,
+} from "@/lib/security/audit";
+import {
+  sanitizeRequestForUser,
+  toSessionUser,
+} from "@/lib/security/sanitize-request";
+import { canAccessRequestRecord } from "@/lib/security/authorization";
 import { RequestUrgency } from "@prisma/client";
 import { NextResponse } from "next/server";
 
@@ -62,39 +73,29 @@ export async function GET() {
       take: 50,
     });
 
-    const sanitized = requests.map((r) => {
-      const base = {
-        ...r,
-        patientNameEnc: undefined,
-        patientDOBEnc: undefined,
-        patientRoomEnc: undefined,
-        deviceNameEnc: undefined,
-        deviceSerialEnc: undefined,
-      };
-
-      if (session.user.role === "PROVIDER") {
-        return {
-          ...base,
-          patientName: r.patientNameEnc ? decryptPHI(r.patientNameEnc) : null,
-          patientDOB: r.patientDOBEnc
-            ? decryptDate(r.patientDOBEnc).toISOString()
-            : null,
-          patientRoom: r.patientRoomEnc ? decryptPHI(r.patientRoomEnc) : null,
-        };
-      }
-
-      if (["REP", "COMPANY_ADMIN"].includes(session.user.role)) {
-        return {
-          ...base,
-          deviceManufacturer: r.deviceManufacturer,
-          deviceName: r.deviceNameEnc ? decryptPHI(r.deviceNameEnc) : null,
-          deviceSerial: r.deviceSerialEnc ? decryptPHI(r.deviceSerialEnc) : null,
-          crmLookupStatus: r.crmLookupStatus,
-        };
-      }
-
-      return base;
+    const user = toSessionUser({
+      id: session.user.id,
+      role: session.user.role,
+      companyId: session.user.companyId,
+      accountState: session.user.accountState,
+      adminPermissions: session.user.adminPermissions,
     });
+
+    const delegatedAdminIds =
+      user.role === "REP" ? await getDelegatedAdminIdsForRep(user.id) : [];
+
+    const sanitized = requests
+      .filter((r) =>
+        canAccessRequestRecord(user, r, { delegatedAdminIds })
+      )
+      .map((r) => {
+        const isDelegatedAdmin =
+          user.role === "REP" &&
+          Boolean(
+            r.assignedAdminId && delegatedAdminIds.includes(r.assignedAdminId)
+          );
+        return sanitizeRequestForUser(r, user, { isDelegatedAdmin });
+      });
 
     return NextResponse.json(sanitized);
   } catch (error) {
@@ -274,6 +275,34 @@ export async function POST(request: Request) {
       },
     });
 
+    const providerOrgId = providerProfile?.organizationId ?? null;
+
+    await logRoutingEvent({
+      requestId: serviceRequest.id,
+      eventType: "REQUEST_CREATED",
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      organizationId: providerOrgId,
+      companyId,
+    });
+
+    await logRoutingEvent({
+      requestId: serviceRequest.id,
+      eventType: "ROUTING_SELECTED_COMPANY",
+      companyId,
+      metadata: { zipCode },
+    });
+
+    if (matchedAdmin) {
+      await logRoutingEvent({
+        requestId: serviceRequest.id,
+        eventType: "ADMIN_MATCHED",
+        targetUserId: matchedAdmin.id,
+        companyId,
+        metadata: { zipCode },
+      });
+    }
+
     const autoAssigned = !data.preferredRepId && !data.assignRepId && assignRepId;
     const repNote = assignRepId
       ? isRepInitiated
@@ -287,30 +316,27 @@ export async function POST(request: Request) {
       data: {
         requestId: serviceRequest.id,
         status: serviceRequest.status,
-        note:
+        note: safeStatusNote(
           repNote ??
-          (crmLookupStatus === "FOUND" && deviceName
-            ? `CRM matched ${deviceName}${deviceSerial ? ` (${deviceSerial})` : ""}`
-            : matchedAdmin
-              ? `Routed to admin ${matchedAdmin.name} for zip ${zipCode}`
-              : "Request submitted — awaiting admin assignment"),
+            (crmLookupStatus === "FOUND"
+              ? "CRM device lookup succeeded"
+              : matchedAdmin
+                ? `Routed to admin for zip ${zipCode}`
+                : "Request submitted — awaiting admin assignment")
+        ),
       },
     });
 
     const salesforceCaseId = await createSalesforceCase({
       companyId,
       requestId: serviceRequest.id,
-      subject: `GoRepYo request — ${data.facilityName}`,
+      subject: `GoRepYo request ${serviceRequest.id.slice(0, 8)}`,
       description: [
         `Request ID: ${serviceRequest.id}`,
-        `Patient: ${data.patientName ?? "N/A"}`,
         `Manufacturer: ${data.deviceManufacturer ?? "N/A"}`,
-        deviceName ? `Device: ${deviceName}` : null,
-        deviceSerial ? `Serial: ${deviceSerial}` : null,
         `Scheduled: ${scheduledAt.toISOString()}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
+        "Patient identifiers stored in GoRepYo only.",
+      ].join("\n"),
     });
 
     if (salesforceCaseId) {
@@ -340,7 +366,8 @@ export async function POST(request: Request) {
       const assignResult = await assignRepToRequest(
         serviceRequest.id,
         assignRepId,
-        routingCriteria
+        routingCriteria,
+        { id: session.user.id, role: session.user.role }
       );
       if (!assignResult.assigned) {
         await db.serviceRequest.delete({ where: { id: serviceRequest.id } });
@@ -359,18 +386,39 @@ export async function POST(request: Request) {
         await db.notification.create({
           data: {
             userId: notifyUserId,
-            title: isRepInitiated ? "Rep-Created Request" : "New Provider Request",
-            body: `New request at ${data.facilityName} (zip ${zipCode})`,
+            title: GENERIC_NOTIFICATION.newRequest.title,
+            body: GENERIC_NOTIFICATION.newRequest.body,
             type: "REQUEST_ASSIGNED",
             data: { requestId: serviceRequest.id },
           },
         });
+        await logPhiAccess({
+          requestId: serviceRequest.id,
+          userId: notifyUserId,
+          userRole: "COMPANY_ADMIN",
+          accessType: "NOTIFICATION_SENT",
+          companyId,
+          metadata: { notificationType: "NEW_REQUEST" },
+        });
       }
     }
 
+    const sessionUser = toSessionUser({
+      id: session.user.id,
+      role: session.user.role,
+      companyId: session.user.companyId,
+      accountState: session.user.accountState,
+      adminPermissions: session.user.adminPermissions,
+    });
+
     return NextResponse.json(
       {
-        request: serviceRequest,
+        request: sanitizeRequestForUser(
+          await db.serviceRequest.findUniqueOrThrow({
+            where: { id: serviceRequest.id },
+          }),
+          sessionUser
+        ),
         matchedAdmin: matchedAdmin
           ? { id: matchedAdmin.id, name: matchedAdmin.name }
           : null,

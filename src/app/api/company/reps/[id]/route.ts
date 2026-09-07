@@ -21,15 +21,27 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const rep = await db.user.findFirst({
     where: { id, role: "REP", companyId: session.user.companyId ?? undefined },
+    include: { repProfile: true },
   });
 
   if (!rep) {
     return NextResponse.json({ error: "Rep not found" }, { status: 404 });
   }
 
+  const before = { credentialStatus: rep.repProfile?.credentialStatus };
+
   const updated = await db.repProfile.update({
     where: { userId: id },
     data: { credentialStatus: parsed.data.credentialStatus },
+  });
+
+  const { logPermissionChange } = await import("@/lib/security/audit");
+  await logPermissionChange({
+    targetUserId: id,
+    changedById: session.user.id,
+    changeType: "CREDENTIAL_STATUS_CHANGED",
+    beforeState: before,
+    afterState: { credentialStatus: parsed.data.credentialStatus },
   });
 
   return NextResponse.json(updated);

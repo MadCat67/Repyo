@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { logPhiAccess } from "@/lib/security/audit";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -25,10 +26,31 @@ export async function PATCH(request: Request) {
 
   const { ids } = await request.json();
 
+  const notifications = await db.notification.findMany({
+    where: { id: { in: ids }, userId: session.user.id },
+    select: { id: true, data: true },
+  });
+
   await db.notification.updateMany({
     where: { id: { in: ids }, userId: session.user.id },
     data: { read: true },
   });
+
+  for (const n of notifications) {
+    const requestId =
+      n.data && typeof n.data === "object" && "requestId" in n.data
+        ? String((n.data as { requestId: string }).requestId)
+        : null;
+    if (requestId) {
+      await logPhiAccess({
+        requestId,
+        userId: session.user.id,
+        userRole: session.user.role,
+        accessType: "NOTIFICATION_DELIVERED",
+        metadata: { notificationId: n.id },
+      });
+    }
+  }
 
   return NextResponse.json({ success: true });
 }

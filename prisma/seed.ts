@@ -75,6 +75,12 @@ async function main() {
 
   await clearDemoData();
 
+  // Demo users: VERIFIED account state (registered ≠ verified ≠ PHI-enabled org)
+  const verifiedUserDefaults = {
+    accountState: "VERIFIED" as const,
+    verifiedAt: new Date("2025-01-01"),
+  };
+
   const medtronic = await db.company.upsert({
     where: { slug: "medtronic" },
     update: {
@@ -192,6 +198,7 @@ async function main() {
       passwordHash,
       name: "Dr. Sarah Chen",
       phone: "(602) 555-0101",
+      ...verifiedUserDefaults,
     },
     create: {
       email: "provider@demo.com",
@@ -461,6 +468,8 @@ async function main() {
       companyId: medtronic.id,
       zipCodeStart: "85040",
       zipCodeEnd: "85050",
+      ...verifiedUserDefaults,
+      adminPermissions: ["MANAGE_REPS", "MANAGE_REQUESTS", "VIEW_CALENDAR"],
     },
     create: {
       email: "admin@demo.com",
@@ -480,7 +489,7 @@ async function main() {
 
   await db.user.upsert({
     where: { email: "admin2@demo.com" },
-    update: { passwordHash, companyId: boston.id },
+    update: { passwordHash, companyId: boston.id, ...verifiedUserDefaults },
     create: {
       email: "admin2@demo.com",
       passwordHash,
@@ -492,7 +501,15 @@ async function main() {
 
   await db.user.upsert({
     where: { email: "super@demo.com" },
-    update: { passwordHash },
+    update: {
+      passwordHash,
+      ...verifiedUserDefaults,
+      adminPermissions: [
+        "SECURITY_KILL_SWITCH",
+        "REVOKE_SESSIONS",
+        "VIEW_AUDIT_LOGS",
+      ],
+    },
     create: {
       email: "super@demo.com",
       passwordHash,

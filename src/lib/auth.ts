@@ -3,7 +3,9 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { authConfig } from "@/lib/auth.config";
-import type { Role } from "@prisma/client";
+import type { Role, UserAccountState } from "@prisma/client";
+import { isAccountActive } from "@/lib/security/authorization";
+import { isKillSwitchActive } from "@/lib/security/kill-switch";
 
 declare module "next-auth" {
   interface Session {
@@ -13,12 +15,17 @@ declare module "next-auth" {
       name: string;
       role: Role;
       companyId: string | null;
+      accountState: UserAccountState;
+      adminPermissions: string[];
     };
   }
 
   interface User {
     role: Role;
     companyId: string | null;
+    sessionVersion: number;
+    accountState: UserAccountState;
+    adminPermissions: string[];
   }
 }
 
@@ -27,6 +34,10 @@ declare module "@auth/core/jwt" {
     id: string;
     role: Role;
     companyId: string | null;
+    sessionVersion: number;
+    accountState: UserAccountState;
+    adminPermissions: string[];
+    error?: string;
   }
 }
 
@@ -43,11 +54,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         const email = (credentials.email as string).trim().toLowerCase();
 
+        const globalKill = await isKillSwitchActive("GLOBAL");
+        if (globalKill.blocked) return null;
+
         const user = await db.user.findUnique({
           where: { email },
         });
 
-        if (!user) return null;
+        if (!user || !isAccountActive(user.accountState)) return null;
+
+        const userKill = await isKillSwitchActive("USER", user.id);
+        if (userKill.blocked) return null;
 
         const valid = await bcrypt.compare(
           credentials.password as string,
@@ -62,6 +79,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: user.name,
           role: user.role,
           companyId: user.companyId,
+          sessionVersion: user.sessionVersion,
+          accountState: user.accountState,
+          adminPermissions: user.adminPermissions,
         };
       },
     }),

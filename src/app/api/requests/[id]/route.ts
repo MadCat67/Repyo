@@ -1,20 +1,38 @@
 import { auth } from "@/lib/auth";
 import { canActAsAdminForRequest } from "@/lib/admin-matching";
+import { getDelegatedAdminIdsForRep } from "@/lib/admin-matching";
 import { db } from "@/lib/db";
-import { decryptPHI, decryptDate } from "@/lib/encryption";
 import { assignRepToRequest, realtimeBus } from "@/lib/routing-engine";
+import {
+  GENERIC_NOTIFICATION,
+  logPhiAccess,
+  logRoutingEvent,
+  safeStatusNote,
+} from "@/lib/security/audit";
+import { checkRequestAccessible } from "@/lib/security/kill-switch";
+import { requireAuth, isAuthError } from "@/lib/security/require-auth";
+import {
+  getProviderOrgContext,
+  sanitizeRequestForUser,
+  toSessionUser,
+} from "@/lib/security/sanitize-request";
+import { canAccessRequestRecord } from "@/lib/security/authorization";
 import { assignRepSchema, updateRequestStatusSchema } from "@/lib/validations";
 import { NextResponse } from "next/server";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, context: RouteContext) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authResult = await requireAuth();
+  if (isAuthError(authResult)) return authResult;
+  const user = authResult.user;
 
   const { id } = await context.params;
+
+  const accessible = await checkRequestAccessible(id);
+  if (!accessible) {
+    return NextResponse.json({ error: "Request unavailable" }, { status: 403 });
+  }
 
   const serviceRequest = await db.serviceRequest.findUnique({
     where: { id },
@@ -31,6 +49,7 @@ export async function GET(_request: Request, context: RouteContext) {
       },
       company: { select: { id: true, name: true } },
       statusLogs: { orderBy: { createdAt: "asc" } },
+      routingEvents: { orderBy: { createdAt: "asc" } },
     },
   });
 
@@ -38,34 +57,86 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const delegatedAdminIds =
+    user.role === "REP" ? await getDelegatedAdminIdsForRep(user.id) : [];
+
+  const canAccess = canAccessRequestRecord(user, serviceRequest, {
+    delegatedAdminIds,
+  });
+  if (!canAccess) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const isDelegatedAdmin =
+    user.role === "REP" &&
+    Boolean(
+      serviceRequest.assignedAdminId &&
+        delegatedAdminIds.includes(serviceRequest.assignedAdminId)
+    );
+
+  const sanitized = sanitizeRequestForUser(serviceRequest, user, {
+    isDelegatedAdmin,
+  });
+
+  const orgId = await getProviderOrgContext(user.id);
+  await logPhiAccess({
+    requestId: id,
+    userId: user.id,
+    userRole: user.role,
+    accessType: "REQUEST_OPENED",
+    organizationId: orgId,
+    companyId: serviceRequest.companyId,
+  });
+
+  const phiVisible =
+    "patientName" in sanitized && sanitized.patientName
+      ? true
+      : "deviceName" in sanitized && sanitized.deviceName
+        ? true
+        : "deviceSerial" in sanitized && sanitized.deviceSerial
+          ? true
+          : false;
+  if (phiVisible) {
+    await logPhiAccess({
+      requestId: id,
+      userId: user.id,
+      userRole: user.role,
+      accessType: "PHI_DISPLAYED",
+      organizationId: orgId,
+      companyId: serviceRequest.companyId,
+      metadata: {
+        fields: [
+          "patientName" in sanitized && sanitized.patientName ? "patient" : null,
+          "deviceName" in sanitized && sanitized.deviceName ? "device" : null,
+        ].filter(Boolean),
+      },
+    });
+    await logRoutingEvent({
+      requestId: id,
+      eventType: "REP_OPENED_REQUEST",
+      actorId: user.id,
+      actorRole: user.role,
+      organizationId: orgId,
+      companyId: serviceRequest.companyId,
+    });
+  }
+
   return NextResponse.json({
-    ...serviceRequest,
-    patientName: serviceRequest.patientNameEnc
-      ? decryptPHI(serviceRequest.patientNameEnc)
-      : null,
-    patientDOB: serviceRequest.patientDOBEnc
-      ? decryptDate(serviceRequest.patientDOBEnc).toISOString()
-      : null,
-    patientRoom: serviceRequest.patientRoomEnc
-      ? decryptPHI(serviceRequest.patientRoomEnc)
-      : null,
-    patientNameEnc: undefined,
-    patientDOBEnc: undefined,
-    patientRoomEnc: undefined,
+    ...sanitized,
+    routingHistory: serviceRequest.routingEvents,
   });
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authResult = await requireAuth();
+  if (isAuthError(authResult)) return authResult;
+  const sessionUser = authResult.user;
 
   const { id } = await context.params;
   const body = await request.json();
 
   if (body.repId) {
-    return handleAssignRep(session.user, id, body);
+    return handleAssignRep(sessionUser, id, body);
   }
 
   const parsed = updateRequestStatusSchema.safeParse(body);
@@ -79,20 +150,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const isRep = session.user.role === "REP" && existing.assignedRepId === session.user.id;
+  const isRep = sessionUser.role === "REP" && existing.assignedRepId === sessionUser.id;
   const isProvider =
-    session.user.role === "PROVIDER" && existing.providerId === session.user.id;
-  const isSuperAdmin = session.user.role === "SUPER_ADMIN";
+    sessionUser.role === "PROVIDER" && existing.providerId === sessionUser.id;
+  const isSuperAdmin = sessionUser.role === "SUPER_ADMIN";
   const canActAsAdmin = await canActAsAdminForRequest(
-    session.user.id,
-    session.user.role,
+    sessionUser.id,
+    sessionUser.role,
     existing.assignedAdminId
   );
 
   const { status, lat, lng, note } = parsed.data;
 
   if (status === "ACCEPTED" && existing.status === "REQUESTING") {
-    if (!canActAsAdmin && !isSuperAdmin) {
+    if (!canActAsAdmin && !isSuperAdmin && !isRep) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   } else if (status === "CANCELLED" && isProvider) {
@@ -118,7 +189,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     });
 
     await tx.requestStatusLog.create({
-      data: { requestId: id, status, lat, lng, note },
+      data: {
+        requestId: id,
+        status,
+        lat,
+        lng,
+        note: note ? safeStatusNote(note) : null,
+      },
     });
 
     if (status === "ACCEPTED" || status === "EN_ROUTE") {
@@ -126,8 +203,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         await tx.notification.create({
           data: {
             userId: existing.providerId,
-            title: `Request ${status === "ACCEPTED" ? "Accepted" : "En Route"}`,
-            body: `${session.user.name} updated request status to ${status.replace("_", " ").toLowerCase()}`,
+            title: GENERIC_NOTIFICATION.statusUpdate.title,
+            body: GENERIC_NOTIFICATION.statusUpdate.body,
             type: "REQUEST_STATUS",
             data: { requestId: id, status },
           },
@@ -138,16 +215,29 @@ export async function PATCH(request: Request, context: RouteContext) {
     return req;
   });
 
+  if (status === "ACCEPTED") {
+    await logRoutingEvent({
+      requestId: id,
+      eventType: "REP_ACCEPTED",
+      actorId: sessionUser.id,
+      actorRole: sessionUser.role,
+      companyId: existing.companyId,
+    });
+  }
+
   realtimeBus.emit("request:updated", { requestId: id });
   if (existing.providerId) {
-    realtimeBus.emit(`user:${existing.providerId}`, { type: "REQUEST_STATUS", requestId: id });
+    realtimeBus.emit(`user:${existing.providerId}`, {
+      type: "REQUEST_STATUS",
+      requestId: id,
+    });
   }
 
   return NextResponse.json(updated);
 }
 
 async function handleAssignRep(
-  user: { id: string; role: string },
+  user: ReturnType<typeof toSessionUser>,
   requestId: string,
   body: unknown
 ) {
@@ -171,15 +261,20 @@ async function handleAssignRep(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const result = await assignRepToRequest(requestId, parsed.data.repId, {
-    companyId: existing.companyId,
-    facilityName: existing.facilityName,
-    facilityLat: existing.facilityLat,
-    facilityLng: existing.facilityLng,
-    facilityZip: existing.facilityZipCode,
-    product: existing.product,
-    scheduledAt: existing.scheduledAt,
-  });
+  const result = await assignRepToRequest(
+    requestId,
+    parsed.data.repId,
+    {
+      companyId: existing.companyId,
+      facilityName: existing.facilityName,
+      facilityLat: existing.facilityLat,
+      facilityLng: existing.facilityLng,
+      facilityZip: existing.facilityZipCode,
+      product: existing.product,
+      scheduledAt: existing.scheduledAt,
+    },
+    { id: user.id, role: user.role }
+  );
 
   if (!result.assigned) {
     return NextResponse.json(

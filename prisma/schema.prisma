@@ -48,6 +48,65 @@ enum CredentialStatus {
   REVOKED
 }
 
+enum UserAccountState {
+  REGISTERED
+  VERIFIED
+  SUSPENDED
+  DISABLED
+  REVOKED
+}
+
+enum RecordLifecycle {
+  ACTIVE
+  ARCHIVED
+  LEGAL_HOLD
+  PENDING_DESTRUCTION
+  DESTROYED
+}
+
+enum RoutingEventType {
+  REQUEST_CREATED
+  ROUTING_SELECTED_COMPANY
+  ADMIN_MATCHED
+  REP_NOTIFIED
+  REP_AUTO_ASSIGNED
+  REP_OPENED_REQUEST
+  ADMIN_REASSIGNED
+  REP_ACCEPTED
+  PHI_ACCESSED
+  REQUEST_REROUTED
+  KILL_SWITCH_APPLIED
+}
+
+enum PhiAccessType {
+  NOTIFICATION_SENT
+  NOTIFICATION_DELIVERED
+  REQUEST_OPENED
+  PHI_DISPLAYED
+  CRM_LOOKUP
+}
+
+enum PermissionChangeType {
+  ROLE_CHANGED
+  ADMIN_PERMISSIONS_CHANGED
+  TERRITORY_CHANGED
+  DELEGATION_CHANGED
+  ACCOUNT_STATE_CHANGED
+  CREDENTIAL_STATUS_CHANGED
+  MFA_ENABLED
+  MFA_DISABLED
+  SESSION_REVOKED
+}
+
+enum KillSwitchScope {
+  GLOBAL
+  USER
+  ORGANIZATION
+  COMPANY
+  REQUEST
+  INTEGRATION
+}
+
 model User {
   id               String           @id @default(uuid())
   role             Role
@@ -60,6 +119,16 @@ model User {
   zipCodeEnd       String?
   delegatedRepId   String?
   delegationActive Boolean          @default(false)
+  accountState     UserAccountState @default(REGISTERED)
+  verifiedAt       DateTime?
+  sessionVersion   Int              @default(0)
+  mfaEnabled       Boolean          @default(false)
+  mfaSecretEnc     String?
+  adminPermissions String[]         @default([])
+  disabledAt       DateTime?
+  disabledById     String?
+  disableReason    String?
+  lastSessionRevokedAt DateTime?
   company          Company?         @relation(fields: [companyId], references: [id])
   delegatedRep     User?            @relation("AdminDelegation", fields: [delegatedRepId], references: [id])
   delegatingAdmins User[]           @relation("AdminDelegation")
@@ -75,6 +144,11 @@ model User {
   favoriteReps     FavoriteRep[]    @relation("ProviderFavorites")
   favoritedBy      FavoriteRep[]    @relation("RepFavorites")
   notifications    Notification[]
+  routingEvents    RequestRoutingEvent[] @relation("RoutingActor")
+  phiAccessLogs    PhiAccessLog[]
+  permissionChangesTarget PermissionChangeLog[] @relation("PermissionTarget")
+  permissionChangesBy     PermissionChangeLog[] @relation("PermissionChangedBy")
+  killSwitchesActivated   SecurityKillSwitch[]  @relation("KillSwitchActivator")
 }
 
 model Company {
@@ -84,6 +158,10 @@ model Company {
   products  String[]
   manufacturerAliases String[] @default([])
   active    Boolean  @default(true)
+  accessEnabled       Boolean @default(true)
+  integrationsEnabled Boolean @default(true)
+  killSwitchAt        DateTime?
+  killSwitchReason    String?
   salesforceInstanceUrl       String?
   salesforceAccessTokenEnc    String?
   salesforceRefreshTokenEnc   String?
@@ -144,6 +222,9 @@ model ProviderOrganization {
   baaExecutedAt  DateTime?
   orgAgreementAt DateTime?
   phiEnabledAt   DateTime?
+  accessEnabled  Boolean                  @default(true)
+  killSwitchAt   DateTime?
+  killSwitchReason String?
   verifiedAt     DateTime?
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
@@ -315,6 +396,10 @@ model ServiceRequest {
   urgency              RequestUrgency
   scheduledAt          DateTime
   status               RequestStatus  @default(REQUESTING)
+  recordLifecycle      RecordLifecycle @default(ACTIVE)
+  accessEnabled        Boolean        @default(true)
+  killSwitchAt         DateTime?
+  killSwitchReason     String?
   notes                String?
   repLat               Float?
   repLng               Float?
@@ -328,6 +413,8 @@ model ServiceRequest {
   company        Company  @relation(fields: [companyId], references: [id])
   assignedRep    User?    @relation("AssignedRepRequests", fields: [assignedRepId], references: [id])
   statusLogs     RequestStatusLog[]
+  routingEvents  RequestRoutingEvent[]
+  phiAccessLogs  PhiAccessLog[]
 
   @@index([providerId])
   @@index([initiatedByRepId])
@@ -376,4 +463,72 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read])
+}
+
+model RequestRoutingEvent {
+  id             String           @id @default(uuid())
+  requestId      String
+  eventType      RoutingEventType
+  actorId        String?
+  actorRole      Role?
+  organizationId String?
+  companyId      String?
+  targetUserId   String?
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actor   User?          @relation("RoutingActor", fields: [actorId], references: [id])
+
+  @@index([requestId, createdAt])
+}
+
+model PhiAccessLog {
+  id             String        @id @default(uuid())
+  requestId      String?
+  userId         String
+  userRole       Role
+  organizationId String?
+  companyId      String?
+  accessType     PhiAccessType
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+
+  request ServiceRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user    User             @relation(fields: [userId], references: [id])
+
+  @@index([requestId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model PermissionChangeLog {
+  id           String               @id @default(uuid())
+  targetUserId String
+  changedById  String
+  changeType   PermissionChangeType
+  beforeState  Json
+  afterState   Json
+  reason       String?
+  createdAt    DateTime             @default(now())
+
+  targetUser User @relation("PermissionTarget", fields: [targetUserId], references: [id])
+  changedBy  User @relation("PermissionChangedBy", fields: [changedById], references: [id])
+
+  @@index([targetUserId, createdAt])
+}
+
+model SecurityKillSwitch {
+  id              String          @id @default(uuid())
+  scope           KillSwitchScope
+  scopeId         String?
+  active          Boolean         @default(true)
+  reason          String
+  activatedById   String
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  createdAt       DateTime        @default(now())
+
+  activatedBy User @relation("KillSwitchActivator", fields: [activatedById], references: [id])
+
+  @@index([scope, scopeId, active])
 }

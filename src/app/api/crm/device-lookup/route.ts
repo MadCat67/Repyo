@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { lookupPatientDevice } from "@/lib/salesforce";
+import { logPhiAccess } from "@/lib/security/audit";
 import { deviceLookupSchema } from "@/lib/validations";
 import { NextResponse } from "next/server";
 
@@ -20,6 +21,14 @@ export async function POST(request: Request) {
     }
 
     const result = await lookupPatientDevice(parsed.data);
+
+    await logPhiAccess({
+      userId: session.user.id,
+      userRole: session.user.role,
+      accessType: "CRM_LOOKUP",
+      metadata: { status: result.status, companyId: result.companyId || null },
+    });
+
     return NextResponse.json(result);
   } catch (error) {
     console.error("POST /api/crm/device-lookup error:", error);
