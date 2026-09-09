@@ -30,6 +30,7 @@ const NAV_CONFIG: Record<string, { title: string; items: NavItem[] }> = {
     title: "Provider Portal",
     items: [
       { href: "/provider", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
+      { href: "/provider/schedule", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
       { href: "/provider/requests", label: "Requests", icon: <Stethoscope className="h-4 w-4" /> },
       { href: "/provider/favorites", label: "Favorite Reps", icon: <Users className="h-4 w-4" /> },
     ],
