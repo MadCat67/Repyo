@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, Copy, Check, Mail, MessageSquare, Link2, QrCode } from "lucide-react";
+import { X, Copy, Check, Mail, Link2, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,6 @@ type InviteResult = {
 
 const CHANNELS: { id: InvitationChannel; label: string; icon: typeof Mail }[] = [
   { id: "EMAIL", label: "Email", icon: Mail },
-  { id: "SMS", label: "SMS", icon: MessageSquare },
   { id: "LINK", label: "Link", icon: Link2 },
   { id: "QR", label: "QR code", icon: QrCode },
 ];
@@ -24,7 +23,6 @@ const CHANNELS: { id: InvitationChannel; label: string; icon: typeof Mail }[] = 
 export function InviteModal({ onClose }: { onClose: () => void }) {
   const [channel, setChannel] = useState<InvitationChannel>("LINK");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<InviteResult | null>(null);
@@ -44,7 +42,11 @@ export function InviteModal({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/invitations");
       if (res.ok) {
         const data = await res.json();
-        setRecent(Array.isArray(data) ? data : []);
+        setRecent(
+          Array.isArray(data)
+            ? data.filter((inv) => inv.status === "PENDING")
+            : []
+        );
       }
     } catch {
       setRecent([]);
@@ -68,7 +70,6 @@ export function InviteModal({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({
           channel,
           inviteeEmail: channel === "EMAIL" ? email : undefined,
-          inviteePhone: channel === "SMS" ? phone : undefined,
         }),
       });
       const data = await res.json();
@@ -92,11 +93,15 @@ export function InviteModal({ onClose }: { onClose: () => void }) {
   }
 
   async function revokeInvite(id: string) {
-    const res = await fetch(`/api/invitations/${id}`, { method: "DELETE" });
-    if (res.ok) loadRecent();
-  }
+    setRecent((prev) => prev.filter((inv) => inv.id !== id));
+    if (result?.id === id) setResult(null);
 
-  const needsContact = channel === "EMAIL" || channel === "SMS";
+    const res = await fetch(`/api/invitations/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError("Failed to revoke invitation");
+      loadRecent();
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -157,16 +162,6 @@ export function InviteModal({ onClose }: { onClose: () => void }) {
             />
           )}
 
-          {channel === "SMS" && (
-            <Input
-              label="Colleague's phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+1 (555) 555-5555"
-            />
-          )}
-
           {(channel === "LINK" || channel === "QR") && (
             <p className="text-sm text-slate-600">
               Generate a single-use link{channel === "QR" ? " and QR code" : ""} you can share with a colleague.
@@ -179,7 +174,7 @@ export function InviteModal({ onClose }: { onClose: () => void }) {
 
           <Button
             onClick={createInvite}
-            disabled={loading || (needsContact && channel === "EMAIL" && !email.trim()) || (needsContact && channel === "SMS" && !phone.trim())}
+            disabled={loading || (channel === "EMAIL" && !email.trim())}
             className="w-full"
           >
             {loading ? "Creating..." : "Create invitation"}

@@ -17,6 +17,12 @@ import {
   subMonths,
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  CalendarDayOverflowModal,
+  CalendarEventModal,
+  calendarEventChipClass,
+  type CalendarRequestPreview,
+} from "@/components/shared/calendar-event-modal";
 
 interface CalendarRequest {
   id: string;
@@ -42,6 +48,11 @@ export function ProviderCalendarPage({ userName }: { userName: string }) {
   const [requests, setRequests] = useState<CalendarRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedRequest, setSelectedRequest] = useState<CalendarRequestPreview | null>(null);
+  const [overflowDay, setOverflowDay] = useState<{
+    date: Date;
+    requests: CalendarRequestPreview[];
+  } | null>(null);
 
   const monthKey = format(viewDate, "yyyy-MM");
 
@@ -170,22 +181,31 @@ export function ProviderCalendarPage({ userName }: { userName: string }) {
                   </div>
                   <div className="space-y-1">
                     {dayRequests.slice(0, 3).map((req) => (
-                      <div
+                      <button
                         key={req.id}
+                        type="button"
+                        onClick={() => setSelectedRequest(req)}
                         className={cn(
-                          "truncate rounded border px-1 py-0.5 text-[10px]",
+                          calendarEventChipClass,
+                          "block w-full text-left",
                           STATUS_COLORS[req.status] ??
                             "bg-slate-100 text-slate-700 border-slate-200"
                         )}
                         title={`${req.facilityName}${req.assignedRep ? ` — ${req.assignedRep.name}` : ""}`}
                       >
                         {format(new Date(req.scheduledAt), "h:mm a")} {req.facilityName}
-                      </div>
+                      </button>
                     ))}
                     {dayRequests.length > 3 && (
-                      <div className="text-[10px] text-slate-500">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOverflowDay({ date: day, requests: dayRequests })
+                        }
+                        className="text-[10px] text-slate-500 hover:text-slate-800 hover:underline"
+                      >
                         +{dayRequests.length - 3} more
-                      </div>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -204,9 +224,11 @@ export function ProviderCalendarPage({ userName }: { userName: string }) {
             <p className="text-sm text-slate-500">No upcoming requests this month.</p>
           ) : (
             upcoming.slice(0, 15).map((req) => (
-              <div
+              <button
                 key={req.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm"
+                type="button"
+                onClick={() => setSelectedRequest(req)}
+                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-sm transition hover:border-rose-200 hover:bg-rose-50/30"
               >
                 <div>
                   <p className="font-medium text-slate-900">{req.facilityName}</p>
@@ -221,11 +243,31 @@ export function ProviderCalendarPage({ userName }: { userName: string }) {
                     {format(new Date(req.scheduledAt), "MMM d, h:mm a")}
                   </p>
                 </div>
-              </div>
+              </button>
             ))
           )}
         </div>
       </section>
+
+      {selectedRequest && (
+        <CalendarEventModal
+          kind="request"
+          preview={selectedRequest}
+          role="provider"
+          onClose={() => setSelectedRequest(null)}
+        />
+      )}
+
+      {overflowDay && (
+        <CalendarDayOverflowModal
+          date={overflowDay.date}
+          requests={overflowDay.requests}
+          blocks={[]}
+          onSelectRequest={setSelectedRequest}
+          onSelectBlock={() => {}}
+          onClose={() => setOverflowDay(null)}
+        />
+      )}
     </PortalShell>
   );
 }

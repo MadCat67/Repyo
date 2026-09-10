@@ -18,6 +18,13 @@ import {
   subMonths,
 } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import {
+  CalendarDayOverflowModal,
+  CalendarEventModal,
+  calendarEventChipClass,
+  type CalendarBlockPreview,
+  type CalendarRequestPreview,
+} from "@/components/shared/calendar-event-modal";
 
 interface ScheduleRule {
   dayOfWeek: number;
@@ -63,6 +70,13 @@ export function RepCalendarPage({ userName }: { userName: string }) {
   const [vacationStart, setVacationStart] = useState("");
   const [vacationEnd, setVacationEnd] = useState("");
   const [vacationNote, setVacationNote] = useState("");
+  const [selectedRequest, setSelectedRequest] = useState<CalendarRequestPreview | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState<CalendarBlockPreview | null>(null);
+  const [overflowDay, setOverflowDay] = useState<{
+    date: Date;
+    requests: CalendarRequestPreview[];
+    blocks: CalendarBlockPreview[];
+  } | null>(null);
 
   const monthKey = format(viewDate, "yyyy-MM");
 
@@ -289,19 +303,62 @@ export function RepCalendarPage({ userName }: { userName: string }) {
                         {format(day, "d")}
                       </span>
                       {dayRequests.slice(0, 2).map((r) => (
-                        <div
+                        <button
                           key={r.id}
-                          className="mt-0.5 truncate rounded bg-blue-100 px-1 py-0.5 text-[10px] text-blue-800"
+                          type="button"
+                          onClick={() => setSelectedRequest(r)}
+                          className={cn(
+                            calendarEventChipClass,
+                            "mt-0.5 block w-full border-blue-200 bg-blue-100 text-left text-blue-800"
+                          )}
                           title={r.facilityName}
                         >
                           {format(new Date(r.scheduledAt), "h:mm a")} {r.facilityName}
-                        </div>
+                        </button>
                       ))}
-                      {onVacation && (
-                        <div className="mt-0.5 truncate text-[10px] font-medium text-red-700">
-                          Vacation
-                        </div>
+                      {dayRequests.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOverflowDay({
+                              date: day,
+                              requests: dayRequests,
+                              blocks: dayBlocks.map((b) => ({
+                                id: b.id,
+                                type: b.type,
+                                startAt: b.startAt,
+                                endAt: b.endAt,
+                                note: b.note,
+                              })),
+                            })
+                          }
+                          className="text-[10px] text-slate-500 hover:text-slate-800 hover:underline"
+                        >
+                          +{dayRequests.length - 2} more
+                        </button>
                       )}
+                      {onVacation &&
+                        dayBlocks
+                          .filter((b) => b.type === "VACATION")
+                          .slice(0, 1)
+                          .map((block) => (
+                            <button
+                              key={block.id}
+                              type="button"
+                              onClick={() =>
+                                setSelectedBlock({
+                                  id: block.id,
+                                  type: block.type,
+                                  startAt: block.startAt,
+                                  endAt: block.endAt,
+                                  note: block.note,
+                                })
+                              }
+                              className="mt-0.5 block w-full truncate text-left text-[10px] font-medium text-red-700 hover:underline"
+                            >
+                              Vacation
+                            </button>
+                          ))}
                     </div>
                   );
                 })}
@@ -412,7 +469,19 @@ export function RepCalendarPage({ userName }: { userName: string }) {
                     key={block.id}
                     className="flex items-start justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"
                   >
-                    <div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedBlock({
+                          id: block.id,
+                          type: block.type,
+                          startAt: block.startAt,
+                          endAt: block.endAt,
+                          note: block.note,
+                        })
+                      }
+                      className="min-w-0 flex-1 text-left hover:opacity-80"
+                    >
                       <p className="font-medium text-slate-900">
                         {block.type === "VACATION" ? "Vacation" : "Off"}
                       </p>
@@ -423,7 +492,7 @@ export function RepCalendarPage({ userName }: { userName: string }) {
                       {block.note && (
                         <p className="text-xs text-slate-500">{block.note}</p>
                       )}
-                    </div>
+                    </button>
                     <button
                       type="button"
                       onClick={() => removeBlock(block.id)}
@@ -438,6 +507,34 @@ export function RepCalendarPage({ userName }: { userName: string }) {
           )}
         </div>
       </div>
+
+      {selectedRequest && (
+        <CalendarEventModal
+          kind="request"
+          preview={selectedRequest}
+          role="rep"
+          onClose={() => setSelectedRequest(null)}
+        />
+      )}
+
+      {selectedBlock && (
+        <CalendarEventModal
+          kind="block"
+          block={selectedBlock}
+          onClose={() => setSelectedBlock(null)}
+        />
+      )}
+
+      {overflowDay && (
+        <CalendarDayOverflowModal
+          date={overflowDay.date}
+          requests={overflowDay.requests}
+          blocks={overflowDay.blocks}
+          onSelectRequest={setSelectedRequest}
+          onSelectBlock={setSelectedBlock}
+          onClose={() => setOverflowDay(null)}
+        />
+      )}
     </PortalShell>
   );
 }

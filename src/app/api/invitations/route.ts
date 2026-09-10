@@ -25,14 +25,13 @@ export async function GET() {
   }
 
   const invitations = await db.platformInvitation.findMany({
-    where: { invitedById: session.user.id },
+    where: { invitedById: session.user.id, status: "PENDING" },
     orderBy: { createdAt: "desc" },
     take: 50,
     select: {
       id: true,
       token: true,
       inviteeEmail: true,
-      inviteePhone: true,
       targetRole: true,
       channel: true,
       status: true,
@@ -66,12 +65,15 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const inviteeEmail = body.inviteeEmail?.trim() || null;
-  const inviteePhone = body.inviteePhone?.trim() || null;
   const channel = (body.channel ?? "LINK") as InvitationChannel;
 
-  if (!inviteeEmail && !inviteePhone && channel !== "LINK" && channel !== "QR") {
+  if (!["EMAIL", "LINK", "QR"].includes(channel)) {
+    return NextResponse.json({ error: "Invalid invitation channel" }, { status: 400 });
+  }
+
+  if (!inviteeEmail && channel !== "LINK" && channel !== "QR") {
     return NextResponse.json(
-      { error: "Email or phone required for this invitation type" },
+      { error: "Email required for this invitation type" },
       { status: 400 }
     );
   }
@@ -121,7 +123,6 @@ export async function POST(request: Request) {
       invitedById: session.user.id,
       inviterRole: session.user.role,
       inviteeEmail,
-      inviteePhone,
       targetRole,
       invitationType,
       channel,
@@ -142,10 +143,8 @@ export async function POST(request: Request) {
         channel,
         deliveryNote:
           channel === "EMAIL"
-            ? "Share this link with your colleague — email delivery can be enabled in production."
-            : channel === "SMS"
-              ? "Copy the link to send via text — SMS delivery can be enabled in production."
-              : null,
+            ? "Share this link with your colleague."
+            : null,
       },
       { status: 201 }
     );

@@ -166,7 +166,6 @@ enum InvitationStatus {
 
 enum InvitationChannel {
   EMAIL
-  SMS
   LINK
   QR
 }
@@ -934,7 +933,6 @@ model PlatformInvitation {
   token              String             @unique
   invitedById        String
   inviteeEmail       String?
-  inviteePhone       String?
   targetRole         Role
   invitationType     InvitationType     @default(PEER)
   channel            InvitationChannel    @default(LINK)

@@ -16,6 +16,13 @@ import {
   subMonths,
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  CalendarDayOverflowModal,
+  CalendarEventModal,
+  calendarEventChipClass,
+  type CalendarBlockPreview,
+  type CalendarRequestPreview,
+} from "@/components/shared/calendar-event-modal";
 
 interface CalendarRequest {
   id: string;
@@ -48,6 +55,13 @@ export function CompanyCalendarPage({ userName }: { userName: string }) {
   const [selectedRepId, setSelectedRepId] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedRequest, setSelectedRequest] = useState<CalendarRequestPreview | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState<CalendarBlockPreview | null>(null);
+  const [overflowDay, setOverflowDay] = useState<{
+    date: Date;
+    requests: CalendarRequestPreview[];
+    blocks: CalendarBlockPreview[];
+  } | null>(null);
 
   const monthKey = format(viewDate, "yyyy-MM");
 
@@ -190,30 +204,82 @@ export function CompanyCalendarPage({ userName }: { userName: string }) {
                   </div>
                   <div className="space-y-1">
                     {dayBlocks.slice(0, 2).map((block) => (
-                      <div
+                      <button
                         key={block.id}
-                        className="truncate rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
+                        type="button"
+                        onClick={() =>
+                          setSelectedBlock({
+                            id: block.id,
+                            type: block.type as "VACATION" | "OFF",
+                            startAt: block.startAt,
+                            endAt: block.endAt,
+                            note: block.note,
+                            repName: block.repName,
+                          })
+                        }
+                        className={cn(
+                          calendarEventChipClass,
+                          "block w-full border-transparent bg-slate-100 text-left text-slate-600"
+                        )}
                         title={`${block.repName}: ${block.type}`}
                       >
                         {block.repName.split(" ")[0]} · {block.type === "VACATION" ? "Vacation" : "Off"}
-                      </div>
+                      </button>
                     ))}
                     {dayRequests.slice(0, 3).map((req) => (
-                      <div
+                      <button
                         key={req.id}
+                        type="button"
+                        onClick={() =>
+                          setSelectedRequest({
+                            id: req.id,
+                            facilityName: req.facilityName,
+                            procedureType: req.procedureType,
+                            scheduledAt: req.scheduledAt,
+                            status: req.status,
+                            urgency: req.urgency,
+                            repName: req.repName,
+                          })
+                        }
                         className={cn(
-                          "truncate rounded border px-1 py-0.5 text-[10px]",
+                          calendarEventChipClass,
+                          "block w-full text-left",
                           colorByRep.get(req.repId)
                         )}
                         title={`${req.repName} — ${req.facilityName}`}
                       >
                         {format(new Date(req.scheduledAt), "h:mm a")} {req.facilityName}
-                      </div>
+                      </button>
                     ))}
-                    {dayRequests.length > 3 && (
-                      <div className="text-[10px] text-slate-500">
-                        +{dayRequests.length - 3} more
-                      </div>
+                    {(dayRequests.length > 3 || dayBlocks.length > 2) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOverflowDay({
+                            date: day,
+                            requests: dayRequests.map((req) => ({
+                              id: req.id,
+                              facilityName: req.facilityName,
+                              procedureType: req.procedureType,
+                              scheduledAt: req.scheduledAt,
+                              status: req.status,
+                              urgency: req.urgency,
+                              repName: req.repName,
+                            })),
+                            blocks: dayBlocks.map((block) => ({
+                              id: block.id,
+                              type: block.type as "VACATION" | "OFF",
+                              startAt: block.startAt,
+                              endAt: block.endAt,
+                              note: block.note,
+                              repName: block.repName,
+                            })),
+                          })
+                        }
+                        className="text-[10px] text-slate-500 hover:text-slate-800 hover:underline"
+                      >
+                        +{Math.max(0, dayRequests.length - 3) + Math.max(0, dayBlocks.length - 2)} more
+                      </button>
                     )}
                   </div>
                 </div>
@@ -232,9 +298,21 @@ export function CompanyCalendarPage({ userName }: { userName: string }) {
             <p className="text-sm text-slate-500">No assignments this month.</p>
           ) : (
             allRequests.slice(0, 12).map((req) => (
-              <div
+              <button
                 key={req.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm"
+                type="button"
+                onClick={() =>
+                  setSelectedRequest({
+                    id: req.id,
+                    facilityName: req.facilityName,
+                    procedureType: req.procedureType,
+                    scheduledAt: req.scheduledAt,
+                    status: req.status,
+                    urgency: req.urgency,
+                    repName: req.repName,
+                  })
+                }
+                className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-sm transition hover:border-rose-200 hover:bg-rose-50/30"
               >
                 <div>
                   <p className="font-medium text-slate-900">{req.facilityName}</p>
@@ -245,11 +323,39 @@ export function CompanyCalendarPage({ userName }: { userName: string }) {
                 <p className="text-xs text-slate-600">
                   {format(new Date(req.scheduledAt), "MMM d, h:mm a")}
                 </p>
-              </div>
+              </button>
             ))
           )}
         </div>
       </section>
+
+      {selectedRequest && (
+        <CalendarEventModal
+          kind="request"
+          preview={selectedRequest}
+          role="company"
+          onClose={() => setSelectedRequest(null)}
+        />
+      )}
+
+      {selectedBlock && (
+        <CalendarEventModal
+          kind="block"
+          block={selectedBlock}
+          onClose={() => setSelectedBlock(null)}
+        />
+      )}
+
+      {overflowDay && (
+        <CalendarDayOverflowModal
+          date={overflowDay.date}
+          requests={overflowDay.requests}
+          blocks={overflowDay.blocks}
+          onSelectRequest={setSelectedRequest}
+          onSelectBlock={setSelectedBlock}
+          onClose={() => setOverflowDay(null)}
+        />
+      )}
     </PortalShell>
   );
 }

@@ -17,7 +17,6 @@ export type CreateInvitationInput = {
   invitedById: string;
   inviterRole: Role;
   inviteeEmail?: string | null;
-  inviteePhone?: string | null;
   targetRole: Role;
   invitationType?: InvitationType;
   channel?: InvitationChannel;
@@ -97,7 +96,6 @@ export async function createInvitation(input: CreateInvitationInput) {
       token,
       invitedById: input.invitedById,
       inviteeEmail: input.inviteeEmail?.trim().toLowerCase() || null,
-      inviteePhone: input.inviteePhone?.trim() || null,
       targetRole: input.targetRole,
       invitationType: input.invitationType ?? "PEER",
       channel: input.channel ?? "LINK",
