@@ -8,7 +8,13 @@ import { applyTeamDefaultsOnAssignment } from "@/lib/teams/calendar-visibility";
 import { getRepTeamIds } from "@/lib/teams/authorization";
 import { findEligibleReps, realtimeBus, type RoutingCriteria } from "@/lib/routing-engine";
 import { REP_STATUS_LABELS } from "@/lib/utils";
-import type { Prisma, Role } from "@prisma/client";
+import type { Prisma, RequestStatus, Role } from "@prisma/client";
+
+/** Rep may forward while the case is still pending or after accepting but before going en route. */
+export const FORWARDABLE_REQUEST_STATUSES: RequestStatus[] = [
+  "REQUESTING",
+  "ACCEPTED",
+];
 
 export type ForwardAuthorizationCheck = {
   passed: boolean;
@@ -415,8 +421,8 @@ export async function forwardRequest(params: {
   });
 
   if (!request) return { ok: false, error: "Request not found" };
-  if (request.status !== "REQUESTING") {
-    return { ok: false, error: "Only pending requests can be forwarded" };
+  if (!FORWARDABLE_REQUEST_STATUSES.includes(request.status)) {
+    return { ok: false, error: "This request can no longer be forwarded" };
   }
   if (request.assignedRepId !== params.forwardedById) {
     return { ok: false, error: "Only the assigned rep can forward this request" };
@@ -424,9 +430,19 @@ export async function forwardRequest(params: {
   if (!request.company.forwardEnabled) {
     return { ok: false, error: "Forwarding is disabled for this company" };
   }
-  if (!request.acknowledgedAt) {
+  if (request.status === "REQUESTING" && !request.acknowledgedAt) {
     return { ok: false, error: "Open the request before forwarding" };
   }
+
+  const revertingFromAccepted = request.status === "ACCEPTED";
+  const resetAfterForward = revertingFromAccepted
+    ? {
+        status: "REQUESTING" as const,
+        repLat: null,
+        repLng: null,
+        etaMinutes: null,
+      }
+    : {};
 
   const targetUser = await db.user.findUnique({
     where: { id: params.forwardedToId },
@@ -481,6 +497,7 @@ export async function forwardRequest(params: {
           acknowledgedAt: null,
           acknowledgedById: null,
           alertActive: false,
+          ...resetAfterForward,
         },
       });
 
@@ -503,6 +520,7 @@ export async function forwardRequest(params: {
           acknowledgedById: null,
           alertActive: true,
           teamId: params.targetTeamId ?? request.teamId,
+          ...resetAfterForward,
         },
       });
 
@@ -522,9 +540,19 @@ export async function forwardRequest(params: {
         data: {
           userId: request.assignedAdminId,
           title: "Request forwarded",
-          body: "A rep forwarded a pending request to another verified colleague.",
+          body: "A rep forwarded a request to another verified colleague.",
           type: "REQUEST_FORWARDED",
           data: { requestId: params.requestId },
+        },
+      });
+    }
+
+    if (revertingFromAccepted) {
+      await tx.requestStatusLog.create({
+        data: {
+          requestId: params.requestId,
+          status: "REQUESTING",
+          note: safeStatusNote("Forwarded after acceptance — reassigned to colleague"),
         },
       });
     }

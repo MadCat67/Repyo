@@ -90,6 +90,8 @@ export function RequestCard({
     isAssignedRep &&
     localRequest.status === "REQUESTING" &&
     Boolean(localRequest.acknowledgedAt);
+  const canForwardAfterAccept =
+    isAssignedRep && localRequest.status === "ACCEPTED";
 
   async function openRequest() {
     setOpening(true);
@@ -320,9 +322,21 @@ export function RequestCard({
           localRequest.assignedRep &&
           localRequest.status === "ACCEPTED" &&
           onAction && (
-            <Button size="sm" onClick={() => onAction("EN_ROUTE", localRequest.id)}>
-              Mark En Route
-            </Button>
+            <>
+              <Button size="sm" onClick={() => onAction("EN_ROUTE", localRequest.id)}>
+                Mark En Route
+              </Button>
+              {canForwardAfterAccept && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onAction("FORWARD", localRequest.id)}
+                >
+                  <ArrowRightLeft className="h-3.5 w-3.5" />
+                  Forward
+                </Button>
+              )}
+            </>
           )}
 
         {role === "rep" && localRequest.status === "EN_ROUTE" && onAction && (

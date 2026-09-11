@@ -1,5 +1,8 @@
 import { requireAuth, isAuthError } from "@/lib/security/require-auth";
-import { getForwardTargets } from "@/lib/request-forwarding";
+import {
+  FORWARDABLE_REQUEST_STATUSES,
+  getForwardTargets,
+} from "@/lib/request-forwarding";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 
@@ -30,7 +33,10 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (request.assignedRepId !== user.id || request.status !== "REQUESTING") {
+  if (
+    request.assignedRepId !== user.id ||
+    !FORWARDABLE_REQUEST_STATUSES.includes(request.status)
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
