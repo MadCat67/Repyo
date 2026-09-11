@@ -53,10 +53,16 @@ export function sanitizeRequestForUser(
 
   const phiAllowed = canViewRequestPhi(user, request, options);
   const deviceAllowed = canViewDeviceIdentifiers(user, request, options);
+  const repMustAcknowledge =
+    user.role === "REP" &&
+    request.assignedRepId === user.id &&
+    !request.acknowledgedAt &&
+    (request.status === "REQUESTING" || request.status === "ACCEPTED");
+
   const isPreAcceptance =
-    request.status === "REQUESTING" &&
     user.role !== "PROVIDER" &&
-    !request.acknowledgedAt;
+    !request.acknowledgedAt &&
+    (request.status === "REQUESTING" || repMustAcknowledge);
 
   const sanitized = {
     ...base,

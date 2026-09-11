@@ -84,7 +84,12 @@ export function canViewRequestPhi(
   if (user.role === "PROVIDER" && request.providerId === user.id) return true;
 
   if (user.role === "REP") {
-    if (request.assignedRepId === user.id) return true;
+    if (request.assignedRepId === user.id) {
+      if (!request.acknowledgedAt && request.status === "ACCEPTED") {
+        return false;
+      }
+      return true;
+    }
     if (request.initiatedByRepId === user.id) return true;
     if (options?.isDelegatedAdmin && request.assignedAdminId) return false;
   }
@@ -113,7 +118,7 @@ export function canViewDeviceIdentifiers(
   if (
     user.role === "REP" &&
     request.assignedRepId === user.id &&
-    request.status === "REQUESTING" &&
+    (request.status === "REQUESTING" || request.status === "ACCEPTED") &&
     (request as { acknowledgedAt?: Date | null }).acknowledgedAt
   ) {
     return true;

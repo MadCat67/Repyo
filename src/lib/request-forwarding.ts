@@ -77,12 +77,12 @@ export async function acknowledgeRequestOnOpen(params: {
 }): Promise<Date | null> {
   const { requestId, userId, userRole, request } = params;
 
-  if (
-    userRole !== "REP" ||
-    request.assignedRepId !== userId ||
-    request.status !== "REQUESTING" ||
-    request.acknowledgedAt
-  ) {
+  const awaitingAcknowledgment =
+    request.assignedRepId === userId &&
+    !request.acknowledgedAt &&
+    (request.status === "REQUESTING" || request.status === "ACCEPTED");
+
+  if (userRole !== "REP" || !awaitingAcknowledgment) {
     return null;
   }
 

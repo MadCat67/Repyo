@@ -84,14 +84,16 @@ export function RequestCard({
     localRequest.assignedRep?.id === currentUserId;
   const needsOpen =
     isAssignedRep &&
-    localRequest.status === "REQUESTING" &&
-    !localRequest.acknowledgedAt;
+    !localRequest.acknowledgedAt &&
+    ["REQUESTING", "ACCEPTED"].includes(localRequest.status);
   const canRespond =
     isAssignedRep &&
     localRequest.status === "REQUESTING" &&
     Boolean(localRequest.acknowledgedAt);
   const canForwardAfterAccept =
-    isAssignedRep && localRequest.status === "ACCEPTED";
+    isAssignedRep &&
+    localRequest.status === "ACCEPTED" &&
+    Boolean(localRequest.acknowledgedAt);
 
   async function openRequest() {
     setOpening(true);
@@ -109,6 +111,10 @@ export function RequestCard({
   }
 
   const canManageAsAdmin = role === "company";
+  const showRepAckStatus =
+    canManageAsAdmin &&
+    localRequest.assignedRep &&
+    ["REQUESTING", "ACCEPTED"].includes(localRequest.status);
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -203,6 +209,25 @@ export function RequestCard({
         {canManageAsAdmin && localRequest.status === "REQUESTING" && (
           <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
             New request — accept and assign a rep
+          </div>
+        )}
+
+        {showRepAckStatus && (
+          <div
+            className={`mt-3 rounded-lg px-3 py-2 text-xs font-medium ${
+              localRequest.acknowledgedAt
+                ? "bg-emerald-50 text-emerald-800"
+                : "bg-amber-50 text-amber-900"
+            }`}
+          >
+            {localRequest.acknowledgedAt ? (
+              <>
+                Seen by {localRequest.assignedRep!.name} ·{" "}
+                {format(new Date(localRequest.acknowledgedAt), "MMM d, h:mm a")}
+              </>
+            ) : (
+              <>Waiting for {localRequest.assignedRep!.name} to open this assignment</>
+            )}
           </div>
         )}
 
@@ -321,6 +346,7 @@ export function RequestCard({
         {role === "rep" &&
           localRequest.assignedRep &&
           localRequest.status === "ACCEPTED" &&
+          localRequest.acknowledgedAt &&
           onAction && (
             <>
               <Button size="sm" onClick={() => onAction("EN_ROUTE", localRequest.id)}>
