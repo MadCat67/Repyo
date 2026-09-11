@@ -94,4 +94,8 @@ export const GENERIC_NOTIFICATION = {
     title: "Request status updated",
     body: "A request you are following has been updated. Open GoRepYo for details.",
   },
+  repAcknowledged: {
+    title: "Rep has seen assignment",
+    body: "An assigned rep opened a request you routed. Open GoRepYo to view details.",
+  },
 } as const;

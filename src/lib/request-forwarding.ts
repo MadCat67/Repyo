@@ -132,6 +132,53 @@ export async function acknowledgeRequestOnOpen(params: {
     companyId: request.companyId,
   });
 
+  const [rep, requestRecord, latestForward] = await Promise.all([
+    db.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    db.serviceRequest.findUnique({
+      where: { id: requestId },
+      select: { assignedAdminId: true, facilityName: true },
+    }),
+    db.requestForward.findFirst({
+      where: { requestId, forwardedToId: userId },
+      orderBy: { forwardTimestamp: "desc" },
+      select: { forwardedById: true },
+    }),
+  ]);
+
+  const notifyUserIds = new Set<string>();
+  if (requestRecord?.assignedAdminId && requestRecord.assignedAdminId !== userId) {
+    notifyUserIds.add(requestRecord.assignedAdminId);
+  }
+  if (
+    latestForward?.forwardedById &&
+    latestForward.forwardedById !== userId
+  ) {
+    notifyUserIds.add(latestForward.forwardedById);
+  }
+
+  const repName = rep?.name ?? "Assigned rep";
+  const facilityLabel = requestRecord?.facilityName ?? "a case";
+
+  for (const notifyUserId of notifyUserIds) {
+    await db.notification.create({
+      data: {
+        userId: notifyUserId,
+        title: GENERIC_NOTIFICATION.repAcknowledged.title,
+        body: `${repName} opened ${facilityLabel}.`,
+        type: "REP_ACKNOWLEDGED",
+        data: {
+          requestId,
+          repId: userId,
+          acknowledgedAt: now.toISOString(),
+        },
+      },
+    });
+    realtimeBus.emit(`user:${notifyUserId}`, {
+      type: "REP_ACKNOWLEDGED",
+      requestId,
+    });
+  }
+
   realtimeBus.emit("request:updated", { requestId });
   realtimeBus.emit(`user:${userId}`, { type: "REQUEST_ACKNOWLEDGED", requestId });
 
