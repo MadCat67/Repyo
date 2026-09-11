@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DomainTagInput } from "@/components/shared/domain-tag-input";
 import { fetchJson } from "@/lib/api-client";
 import { VERIFICATION_METHOD_LABELS, VERIFICATION_METHODS } from "@/lib/verification/constants";
 
@@ -23,7 +23,7 @@ type PendingMember = {
 
 export function CompanyVerificationPanel() {
   const [config, setConfig] = useState<CompanyVerificationConfig | null>(null);
-  const [domains, setDomains] = useState("");
+  const [domains, setDomains] = useState<string[]>([]);
   const [pending, setPending] = useState<PendingMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,7 +39,7 @@ export function CompanyVerificationPanel() {
         fetchJson<{ pending: PendingMember[] }>("/api/company/members"),
       ]);
       setConfig(cfg);
-      setDomains((cfg.approvedEmailDomains ?? []).join(", "));
+      setDomains(cfg.approvedEmailDomains ?? []);
       setPending(members.pending ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load settings");
@@ -58,17 +58,12 @@ export function CompanyVerificationPanel() {
     setError("");
     setMessage("");
     try {
-      const approvedEmailDomains = domains
-        .split(/[,\s]+/)
-        .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
-        .filter(Boolean);
-
       await fetchJson("/api/company/config", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userVerificationMethod: config.userVerificationMethod,
-          approvedEmailDomains,
+          approvedEmailDomains: domains,
         }),
       });
       setMessage("Invite and verification settings saved.");
@@ -143,15 +138,12 @@ export function CompanyVerificationPanel() {
             </select>
           </label>
 
-          <Input
+          <DomainTagInput
             label="Approved email domains"
-            value={domains}
-            onChange={(e) => setDomains(e.target.value)}
-            placeholder="medtronic.com, subsidiary.com"
+            domains={domains}
+            onChange={setDomains}
+            helperText="Invited users must sign up with one of these domains."
           />
-          <p className="text-xs text-slate-500">
-            Comma-separated. Invited users must sign up with one of these domains.
-          </p>
         </div>
 
         <Button className="mt-5" disabled={saving} onClick={saveVerification}>

@@ -287,17 +287,26 @@ export function SignupForm() {
           </div>
         )}
 
-        <Select
-          label="I am a..."
-          name="roleDisplay"
-          value={role}
-          onChange={(e) => setRole(e.target.value as Role)}
-          disabled={inviteLockedRole}
-          options={SIGNUP_ROLES.map((r) => ({
-            value: r,
-            label: ROLE_LABELS[r],
-          }))}
-        />
+        {inviteLockedRole ? (
+          <div className="space-y-1">
+            <span className="block text-sm font-medium text-slate-700">I am a...</span>
+            <div className="flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+              {ROLE_LABELS[role]}
+            </div>
+            <p className="text-xs text-slate-500">Set by your invitation.</p>
+          </div>
+        ) : (
+          <Select
+            label="I am a..."
+            name="roleDisplay"
+            value={role}
+            onChange={(e) => setRole(e.target.value as Role)}
+            options={SIGNUP_ROLES.map((r) => ({
+              value: r,
+              label: ROLE_LABELS[r],
+            }))}
+          />
+        )}
 
         {role === "PROVIDER" && (
           <StepIndicator steps={PROVIDER_STEPS} current={providerStep} />

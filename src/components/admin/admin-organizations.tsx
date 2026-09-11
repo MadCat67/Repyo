@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DomainTagInput } from "@/components/shared/domain-tag-input";
 import { fetchJson } from "@/lib/api-client";
 import { VERIFICATION_METHOD_LABELS, VERIFICATION_METHODS } from "@/lib/verification/constants";
 import { cn } from "@/lib/utils";
@@ -47,7 +47,7 @@ export function AdminOrganizationsPage({ userName }: { userName: string }) {
   const [accessLeads, setAccessLeads] = useState<AccessLead[]>([]);
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
   const [members, setMembers] = useState<Record<string, OrgMember[]>>({});
-  const [domainDrafts, setDomainDrafts] = useState<Record<string, string>>({});
+  const [domainDrafts, setDomainDrafts] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -60,9 +60,9 @@ export function AdminOrganizationsPage({ userName }: { userName: string }) {
       }>("/api/admin/organizations");
       setOrganizations(data.organizations ?? []);
       setAccessLeads(data.accessLeads ?? []);
-      const drafts: Record<string, string> = {};
+      const drafts: Record<string, string[]> = {};
       for (const org of data.organizations ?? []) {
-        drafts[org.id] = (org.approvedEmailDomains ?? []).join(", ");
+        drafts[org.id] = org.approvedEmailDomains ?? [];
       }
       setDomainDrafts(drafts);
     } catch (err) {
@@ -127,11 +127,7 @@ export function AdminOrganizationsPage({ userName }: { userName: string }) {
   }
 
   function saveDomains(org: Organization) {
-    const domains = (domainDrafts[org.id] ?? "")
-      .split(",")
-      .map((d) => d.trim())
-      .filter(Boolean);
-    updateOrg(org.id, { approvedEmailDomains: domains });
+    updateOrg(org.id, { approvedEmailDomains: domainDrafts[org.id] ?? [] });
   }
 
   return (
@@ -233,24 +229,22 @@ export function AdminOrganizationsPage({ userName }: { userName: string }) {
                     </select>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-500">
-                      Approved email domains (comma-separated)
-                    </label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={domainDrafts[org.id] ?? ""}
-                        onChange={(e) =>
-                          setDomainDrafts((prev) => ({
-                            ...prev,
-                            [org.id]: e.target.value,
-                          }))
-                        }
-                        placeholder="bannerhealth.com, bannerhealth.org"
-                      />
-                      <Button size="sm" variant="secondary" onClick={() => saveDomains(org)}>
-                        Save
-                      </Button>
-                    </div>
+                    <DomainTagInput
+                      label="Approved email domains"
+                      domains={domainDrafts[org.id] ?? []}
+                      onChange={(domains) =>
+                        setDomainDrafts((prev) => ({ ...prev, [org.id]: domains }))
+                      }
+                      helperText="Invited providers must sign up with one of these domains."
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="mt-2"
+                      onClick={() => saveDomains(org)}
+                    >
+                      Save domains
+                    </Button>
                   </div>
                 </div>
 
