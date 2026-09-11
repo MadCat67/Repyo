@@ -27,6 +27,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   const data: Record<string, unknown> = {};
   if (body.name?.trim()) data.name = body.name.trim();
   if (body.managerUserId) data.managerUserId = body.managerUserId;
+  if (typeof body.requireManualVerification === "boolean") {
+    data.requireManualVerification = body.requireManualVerification;
+  }
 
   if (Object.keys(data).length > 0) {
     await db.companyTeam.update({ where: { id: teamId }, data });

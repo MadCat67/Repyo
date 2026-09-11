@@ -55,6 +55,7 @@ export async function GET() {
       id: t.id,
       name: t.name,
       defaultCalendarVisibility: t.defaultCalendarVisibility,
+      requireManualVerification: t.requireManualVerification,
       manager: t.manager,
       memberCount: t.members.length,
       assignmentCount: t._count.assignments,

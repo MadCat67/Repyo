@@ -189,6 +189,7 @@ model User {
   delegatedRepId   String?
   delegationActive Boolean          @default(false)
   accountState     UserAccountState @default(REGISTERED)
+  emailVerifiedAt  DateTime?
   verifiedAt       DateTime?
   sessionVersion   Int              @default(0)
   mfaEnabled       Boolean          @default(false)
@@ -577,6 +578,7 @@ model CompanyTeam {
   name                      String
   managerUserId             String
   defaultCalendarVisibility TeamCalendarVisibility @default(SHARED_WITH_TEAM)
+  requireManualVerification Boolean                @default(false)
   createdAt                 DateTime               @default(now())
   updatedAt                 DateTime               @updatedAt
 
@@ -963,5 +965,19 @@ model PlatformInvitation {
   @@index([invitedById, createdAt])
   @@index([organizationId, status])
   @@index([companyId, status])
+  @@index([expiresAt])
+}
+
+model PendingSignup {
+  id             String   @id @default(uuid())
+  confirmToken   String   @unique
+  email          String
+  passwordHash   String
+  payload        Json
+  invitationId   String?
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([email])
   @@index([expiresAt])
 }

@@ -42,6 +42,7 @@ interface TeamData {
   id: string;
   name: string;
   defaultCalendarVisibility: string;
+  requireManualVerification?: boolean;
   manager: { id: string; name: string };
   isManager: boolean;
   memberCount?: number;
@@ -186,6 +187,24 @@ export function CompanyTeamsPage({ userName }: { userName: string }) {
     }
   }
 
+  async function updateManualVerification(teamId: string, enabled: boolean) {
+    try {
+      await fetchJson(`/api/company/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireManualVerification: enabled }),
+      });
+      setMessage(
+        enabled
+          ? "New invitees on this team will need your approval before joining."
+          : "Manual approval disabled for this team."
+      );
+      await loadTeams();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Update failed");
+    }
+  }
+
   async function updateAssignmentVisibility(
     requestId: string,
     teamCalendarVisibility: string
@@ -281,18 +300,30 @@ export function CompanyTeamsPage({ userName }: { userName: string }) {
                     reps
                   </p>
                 </div>
-                <select
-                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  value={team.defaultCalendarVisibility}
-                  onChange={(e) =>
-                    updateDefaultPolicy(team.id, e.target.value)
-                  }
-                >
-                  <option value="SHARED_WITH_TEAM">Default: Share with team</option>
-                  <option value="HIDDEN_FROM_TEAM_PEERS">
-                    Default: Hidden from peers
-                  </option>
-                </select>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={team.defaultCalendarVisibility}
+                    onChange={(e) =>
+                      updateDefaultPolicy(team.id, e.target.value)
+                    }
+                  >
+                    <option value="SHARED_WITH_TEAM">Default: Share with team</option>
+                    <option value="HIDDEN_FROM_TEAM_PEERS">
+                      Default: Hidden from peers
+                    </option>
+                  </select>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={team.requireManualVerification ?? false}
+                      onChange={(e) =>
+                        updateManualVerification(team.id, e.target.checked)
+                      }
+                    />
+                    Require manual approval for new invitees
+                  </label>
+                </div>
               </div>
               <ul className="mt-4 space-y-2">
                 {team.members.map((m) => (

@@ -89,6 +89,9 @@ export function SignupForm() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteBanner, setInviteBanner] = useState<string | null>(null);
   const [inviteLockedRole, setInviteLockedRole] = useState(false);
+  const [emailVerificationSent, setEmailVerificationSent] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     fetch("/api/companies/public")
@@ -249,6 +252,14 @@ export function SignupForm() {
     if (result?.error) {
       setError(result.error);
       setLoading(false);
+      return;
+    }
+
+    if (result?.needsEmailVerification) {
+      setError("");
+      setLoading(false);
+      setEmailVerificationSent(result.email ?? formValues.email);
+      return;
     }
   }
 
@@ -302,6 +313,14 @@ export function SignupForm() {
         >
           {inviteToken && (
             <input type="hidden" name="inviteToken" value={inviteToken} />
+          )}
+
+          {emailVerificationSent && (
+            <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              Check <strong>{emailVerificationSent}</strong> for a confirmation link
+              to finish creating your account. In local development, the link is
+              printed in the server console.
+            </div>
           )}
 
           {error && (

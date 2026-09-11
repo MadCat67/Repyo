@@ -4,25 +4,15 @@ import { signIn } from "@/lib/auth";
 import { canAccessRoute, getDefaultRoute } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import {
-  linkSiteToOrganization,
-  setProviderSites,
-} from "@/lib/healthcare-sites/service";
-import { recordAgreementAcceptances } from "@/lib/legal/acceptance";
-import {
-  PROVIDER_AUTHORIZATION_SLUGS,
-  PROVIDER_PRIVACY_SLUGS,
-  REP_REQUIRED_SLUGS,
-} from "@/lib/legal/documents";
-import {
   evaluateVerificationMethod,
-  verifyCompanySignup,
-  verifyProviderSignup,
 } from "@/lib/verification/user-verification";
 import {
-  acceptInvitation,
-  applyInvitationPreconfig,
   validateInvitationToken,
 } from "@/lib/invitations/service";
+import { sendSignupConfirmationEmail } from "@/lib/email/send-confirmation";
+import { resolveInviteSignupRequirements } from "@/lib/signup/invite-requirements";
+import { createPendingSignup } from "@/lib/signup/pending-signup";
+import type { SignupPayload } from "@/lib/signup/types";
 import { signupSchema } from "@/lib/validations";
 import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
@@ -156,8 +146,15 @@ export async function signupAction(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(password, 12);
 
+  const requiresEmailConfirmation =
+    Boolean(inviteToken?.trim()) ||
+    Boolean(effectiveCompanyId && ["REP", "COMPANY_ADMIN"].includes(effectiveRole)) ||
+    Boolean(effectiveOrganizationId && effectiveRole === "PROVIDER");
+
   let linkedOrganizationId = effectiveOrganizationId;
+  let grantOrgAdministrator = false;
   if (role === "PROVIDER" && requestOrgAccess && requestedOrgName?.trim()) {
+    grantOrgAdministrator = true;
     const orgName = requestedOrgName.trim();
     const slug = orgName
       .toLowerCase()
@@ -247,171 +244,117 @@ export async function signupAction(formData: FormData) {
     }
   }
 
-  let organizationName: string | null = null;
-  if (linkedOrganizationId) {
-    const org = await db.providerOrganization.findUnique({
-      where: { id: linkedOrganizationId },
-      select: { name: true },
+  if (requiresEmailConfirmation) {
+    const requirements = await resolveInviteSignupRequirements({
+      email: normalizedEmail,
+      companyId: effectiveCompanyId,
+      organizationId: linkedOrganizationId,
+      invitationId: invitationContext?.valid
+        ? (
+            await db.platformInvitation.findFirst({
+              where: { token: inviteToken?.trim() },
+              select: { id: true },
+            })
+          )?.id
+        : null,
     });
-    organizationName = org?.name ?? requestedOrgName?.trim() ?? null;
-  }
 
-  const user = await db.user.create({
-    data: {
+    if (!requirements.domainAllowed) {
+      return { error: requirements.domainReason ?? "Email domain not approved" };
+    }
+
+    const signupPayload: SignupPayload = {
       name: name.trim(),
+      role: effectiveRole,
+      companyId: effectiveCompanyId,
+      organizationId: effectiveOrganizationId,
+      linkedOrganizationId,
+      facilityName,
+      facilityAddress,
+      department,
+      zipCode,
+      facilityContactName,
+      facilityContactPhone,
+      requesterPhone,
+      requesterFax,
+      zipCodeStart,
+      zipCodeEnd,
+      acceptProviderAuthorization,
+      acceptProviderPrivacy,
+      acceptTermsAndPrivacy,
+      siteIds,
+      primarySiteId,
+      inviteToken: inviteToken?.trim() ?? null,
+      requireManualApproval: requirements.requireManualApproval,
+      grantOrgAdministrator,
+    };
+
+    const invitationRecord = inviteToken?.trim()
+      ? await db.platformInvitation.findFirst({
+          where: { token: inviteToken.trim() },
+          select: { id: true },
+        })
+      : null;
+
+    const { confirmToken } = await createPendingSignup({
       email: normalizedEmail,
       passwordHash,
-      role,
-      companyId: effectiveCompanyId ?? null,
-      ...(role === "COMPANY_ADMIN" && {
-        zipCodeStart: zipCodeStart?.trim().slice(0, 5) ?? null,
-        zipCodeEnd: zipCodeEnd?.trim().slice(0, 5) ?? null,
-      }),
-      ...(role === "PROVIDER" && {
-        phone: requesterPhone?.trim() || null,
-        providerInfo: {
-          create: {
-            organizationId: linkedOrganizationId,
-            accountStatus: "LIMITED",
-            onboardingComplete: false,
-            onboardingStep: linkedOrganizationId ? 2 : 1,
-            facilityName: facilityName?.trim() || null,
-            facilityAddress: facilityAddress?.trim() || null,
-            facilityContactName: facilityContactName?.trim() || null,
-            facilityContactPhone: facilityContactPhone?.trim() || null,
-            department: department?.trim() || null,
-            zipCode: zipCode?.trim().slice(0, 5) ?? null,
-            requesterPhone: requesterPhone?.trim() || null,
-            requesterFax: requesterFax?.trim() || null,
-            workEmail: normalizedEmail,
-          },
-        },
-      }),
-      ...(role === "REP" && {
-        repProfile: {
-          create: {
-            status: "OFF_DUTY",
-            credentialStatus: "PENDING",
-            products: [],
-            companies: effectiveCompanyId
-              ? [
-                  (
-                    await db.company.findUnique({
-                      where: { id: effectiveCompanyId },
-                      select: { name: true },
-                    })
-                  )?.name ?? "",
-                ].filter(Boolean)
-              : [],
-          },
-        },
-      }),
+      payload: signupPayload,
+      invitationId: invitationRecord?.id ?? null,
+    });
+
+    await sendSignupConfirmationEmail({
+      to: normalizedEmail,
+      name: name.trim(),
+      confirmToken,
+    });
+
+    return {
+      needsEmailVerification: true,
+      email: normalizedEmail,
+      pendingApproval: requirements.requireManualApproval,
+      approver: requirements.approver,
+    };
+  }
+
+  const { completeSignup } = await import("@/lib/signup/complete-signup");
+
+  await completeSignup({
+    email: normalizedEmail,
+    passwordHash,
+    payload: {
+      name: name.trim(),
+      role: effectiveRole,
+      companyId: effectiveCompanyId,
+      linkedOrganizationId,
+      facilityName,
+      facilityAddress,
+      department,
+      zipCode,
+      facilityContactName,
+      facilityContactPhone,
+      requesterPhone,
+      requesterFax,
+      zipCodeStart,
+      zipCodeEnd,
+      acceptProviderAuthorization,
+      acceptProviderPrivacy,
+      acceptTermsAndPrivacy,
+      siteIds,
+      primarySiteId,
+      inviteToken: inviteToken?.trim() ?? null,
+      grantOrgAdministrator,
     },
   });
-
-  const legalName = name.trim();
-  if (role === "PROVIDER" && acceptProviderAuthorization && acceptProviderPrivacy) {
-    await recordAgreementAcceptances(
-      [...PROVIDER_AUTHORIZATION_SLUGS, ...PROVIDER_PRIVACY_SLUGS],
-      {
-        userId: user.id,
-        legalName,
-        role,
-        organizationId: linkedOrganizationId,
-        organizationName,
-        facilityName: facilityName?.trim() ?? null,
-        signatureText: `${legalName} — provider signup acceptance`,
-      }
-    );
-  } else if (
-    ["REP", "COMPANY_ADMIN"].includes(role) &&
-    acceptTermsAndPrivacy
-  ) {
-    await recordAgreementAcceptances([...REP_REQUIRED_SLUGS], {
-      userId: user.id,
-      legalName,
-      role,
-      signatureText: `${legalName} — account signup acceptance`,
-    });
-  }
-
-  if (role === "PROVIDER" && linkedOrganizationId) {
-    await verifyProviderSignup({
-      userId: user.id,
-      email: normalizedEmail,
-      legalName,
-      organizationId: linkedOrganizationId,
-      jobTitle: department?.trim() ?? null,
-      facilityId: null,
-      invitationToken: inviteToken?.trim() ?? null,
-    });
-
-    await db.organizationAccessRequest.updateMany({
-      where: {
-        email: normalizedEmail,
-        organizationId: linkedOrganizationId,
-        status: "PENDING",
-      },
-      data: { userId: user.id },
-    });
-  }
-
-  if (role === "PROVIDER" && siteIds.length > 0) {
-    await setProviderSites(user.id, siteIds, {
-      organizationId: linkedOrganizationId,
-      primarySiteId: primarySiteId ?? siteIds[0],
-      department: department?.trim() ?? null,
-    });
-    if (linkedOrganizationId) {
-      for (const siteId of siteIds) {
-        await linkSiteToOrganization(
-          linkedOrganizationId,
-          siteId,
-          siteId === (primarySiteId ?? siteIds[0])
-        );
-      }
-    }
-  }
-
-  if (["REP", "COMPANY_ADMIN"].includes(role) && effectiveCompanyId) {
-    await verifyCompanySignup({
-      userId: user.id,
-      email: normalizedEmail,
-      legalName,
-      companyId: effectiveCompanyId,
-      invitationToken: inviteToken?.trim() ?? null,
-    });
-  }
-
-  if (inviteToken?.trim()) {
-    try {
-      const accepted = await acceptInvitation({
-        token: inviteToken.trim(),
-        acceptedByUserId: user.id,
-        acceptedEmail: normalizedEmail,
-      });
-      await applyInvitationPreconfig(user.id, accepted);
-    } catch {
-      // Verification may have already accepted the invitation.
-      const pending = await db.platformInvitation.findFirst({
-        where: { token: inviteToken.trim(), status: "PENDING" },
-      });
-      if (pending) {
-        await applyInvitationPreconfig(user.id, pending);
-      }
-    }
-  } else if (invitationContext?.valid) {
-    const pending = await db.platformInvitation.findUnique({
-      where: { id: invitationContext.invitation.id },
-    });
-    if (pending) await applyInvitationPreconfig(user.id, pending);
-  }
 
   try {
     await signIn("credentials", {
       email: normalizedEmail,
       password,
-      redirectTo: role === "PROVIDER" ? "/provider/onboarding" : getDefaultRoute(role),
+      redirectTo:
+        effectiveRole === "PROVIDER"
+          ? "/provider/onboarding"
+          : getDefaultRoute(effectiveRole),
     });
   } catch (error) {
     if (isRedirectError(error)) throw error;

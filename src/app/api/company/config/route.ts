@@ -24,6 +24,8 @@ export async function GET() {
       forwardEnabled: true,
       forwardTeamMembersOnly: true,
       forwardAllowManagers: true,
+      userVerificationMethod: true,
+      approvedEmailDomains: true,
     },
   });
 
@@ -68,6 +70,16 @@ export async function PATCH(request: Request) {
     ...(parsed.data.forwardAllowManagers !== undefined
       ? { forwardAllowManagers: parsed.data.forwardAllowManagers }
       : {}),
+    ...(parsed.data.userVerificationMethod !== undefined
+      ? { userVerificationMethod: parsed.data.userVerificationMethod }
+      : {}),
+    ...(parsed.data.approvedEmailDomains !== undefined
+      ? {
+          approvedEmailDomains: parsed.data.approvedEmailDomains.map((d: string) =>
+            d.trim().toLowerCase().replace(/^@/, "")
+          ),
+        }
+      : {}),
   };
 
   const company = await db.company.update({
@@ -79,6 +91,8 @@ export async function PATCH(request: Request) {
       forwardEnabled: true,
       forwardTeamMembersOnly: true,
       forwardAllowManagers: true,
+      userVerificationMethod: true,
+      approvedEmailDomains: true,
     },
   });
 

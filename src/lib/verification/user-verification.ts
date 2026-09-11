@@ -20,6 +20,7 @@ export type VerificationContext = {
   jobTitle?: string | null;
   facilityId?: string | null;
   invitationToken?: string | null;
+  requireManualApproval?: boolean;
 };
 
 export type VerificationResult = {
@@ -112,6 +113,7 @@ export function evaluateVerificationMethod(
   options?: {
     hasInvitation?: boolean;
     hasRosterEntry?: boolean;
+    requireManualApproval?: boolean;
   }
 ): VerificationResult {
   const domainMatch = emailMatchesApprovedDomain(
@@ -123,12 +125,27 @@ export function evaluateVerificationMethod(
 
   switch (config.userVerificationMethod) {
     case "APPROVED_EMAIL_DOMAIN": {
-      if (domainMatch && live && config.accessEnabled !== false) {
+      if (
+        domainMatch &&
+        live &&
+        config.accessEnabled !== false &&
+        !options?.requireManualApproval
+      ) {
         return {
           decision: "AUTO_APPROVED",
           accountStatus: "ACTIVE",
           userAccountState: "VERIFIED",
           reason: "Email domain matches approved organization domain",
+          source: "SIGNUP_VERIFICATION",
+          unusual: false,
+        };
+      }
+      if (domainMatch && options?.requireManualApproval) {
+        return {
+          decision: "PENDING_REVIEW",
+          accountStatus: "PENDING_APPROVAL",
+          userAccountState: "REGISTERED",
+          reason: "Approved domain — pending administrator approval",
           source: "SIGNUP_VERIFICATION",
           unusual: false,
         };
@@ -178,6 +195,16 @@ export function evaluateVerificationMethod(
 
     case "INVITATION_ONLY": {
       if (options?.hasInvitation) {
+        if (options.requireManualApproval) {
+          return {
+            decision: "PENDING_REVIEW",
+            accountStatus: "PENDING_APPROVAL",
+            userAccountState: "REGISTERED",
+            reason: "Invitation accepted — pending administrator approval",
+            source: "INVITATION",
+            unusual: false,
+          };
+        }
         return {
           decision: live ? "AUTO_APPROVED" : "PENDING_REVIEW",
           accountStatus: live ? "ACTIVE" : "PENDING_APPROVAL",
@@ -292,7 +319,11 @@ export async function verifyProviderSignup(
       accessEnabled: org.accessEnabled,
     },
     context.email,
-    { hasInvitation: Boolean(invitation), hasRosterEntry: Boolean(rosterEntry) }
+    {
+      hasInvitation: Boolean(invitation),
+      hasRosterEntry: Boolean(rosterEntry),
+      requireManualApproval: context.requireManualApproval,
+    }
   );
 
   await applyProviderVerification(context, org.id, org.name, result);
@@ -341,7 +372,11 @@ export async function verifyCompanySignup(
       accessEnabled: company.accessEnabled,
     },
     context.email,
-    { hasInvitation: Boolean(invitation), hasRosterEntry: Boolean(rosterEntry) }
+    {
+      hasInvitation: Boolean(invitation),
+      hasRosterEntry: Boolean(rosterEntry),
+      requireManualApproval: context.requireManualApproval,
+    }
   );
 
   await applyCompanyVerification(context, company.id, company.name, result);
@@ -503,6 +538,52 @@ async function applyCompanyVerification(
       source: result.source,
     },
     reason: result.reason,
+  });
+}
+
+export async function approveCompanyUser(
+  targetUserId: string,
+  approvedById: string,
+  companyId: string,
+  reason?: string
+) {
+  const user = await db.user.findFirst({
+    where: { id: targetUserId, companyId },
+    include: { repProfile: true },
+  });
+  if (!user) {
+    throw new Error("User not found in company");
+  }
+
+  const now = new Date();
+  await db.user.update({
+    where: { id: targetUserId },
+    data: { accountState: "VERIFIED", verifiedAt: now },
+  });
+
+  if (user.repProfile) {
+    await db.repProfile.update({
+      where: { userId: targetUserId },
+      data: { credentialStatus: "ACTIVE" },
+    });
+  }
+
+  await recordAuthorizationGrant({
+    userId: targetUserId,
+    grantedById: approvedById,
+    companyId,
+    grantType: "COMPANY_ACCOUNT_ACCESS",
+    source: "ADMIN_GRANT",
+    metadata: { approvedBy: approvedById },
+  });
+
+  await logPermissionChange({
+    targetUserId,
+    changedById: approvedById,
+    changeType: "USER_VERIFICATION_DECISION",
+    beforeState: { accountState: user.accountState },
+    afterState: { accountState: "VERIFIED", companyId },
+    reason: reason ?? "Company administrator approved user access",
   });
 }
 
