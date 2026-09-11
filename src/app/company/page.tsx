@@ -6,6 +6,7 @@ import { PortalShell } from "@/components/layout/portal-shell";
 import { SalesforceConnectPanel } from "@/components/company/salesforce-connect-panel";
 import { CompanyConfigPanel } from "@/components/company/company-config-panel";
 import { CompanyVerificationPanel } from "@/components/company/company-verification-panel";
+import { CompanyInviteButton } from "@/components/company/company-invite-button";
 import { redirect } from "next/navigation";
 import { Users, Clock, MapPin, Activity, ArrowRight } from "lucide-react";
 
@@ -49,9 +50,12 @@ export default async function CompanyPage() {
 
   return (
     <PortalShell portal="company" userName={session.user.name}>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">{company?.name}</h1>
-        <p className="text-sm text-slate-600">Company Operations Overview</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{company?.name}</h1>
+          <p className="text-sm text-slate-600">Company Operations Overview</p>
+        </div>
+        <CompanyInviteButton />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -20,8 +20,19 @@ const CHANNELS: { id: InvitationChannel; label: string; icon: typeof Mail }[] = 
   { id: "QR", label: "QR code", icon: QrCode },
 ];
 
-export function InviteModal({ onClose }: { onClose: () => void }) {
+type InviteTargetRole = "REP" | "COMPANY_ADMIN";
+
+export function InviteModal({
+  onClose,
+  targetRoleOptions,
+}: {
+  onClose: () => void;
+  targetRoleOptions?: { value: InviteTargetRole; label: string }[];
+}) {
   const [channel, setChannel] = useState<InvitationChannel>("LINK");
+  const [targetRole, setTargetRole] = useState<InviteTargetRole>(
+    targetRoleOptions?.[0]?.value ?? "REP"
+  );
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -70,6 +81,7 @@ export function InviteModal({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({
           channel,
           inviteeEmail: channel === "EMAIL" ? email : undefined,
+          targetRole: targetRoleOptions ? targetRole : undefined,
         }),
       });
       const data = await res.json();
@@ -151,6 +163,23 @@ export function InviteModal({ onClose }: { onClose: () => void }) {
               </button>
             ))}
           </div>
+
+          {targetRoleOptions && targetRoleOptions.length > 1 && (
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-slate-700">Invite as</span>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={targetRole}
+                onChange={(e) => setTargetRole(e.target.value as InviteTargetRole)}
+              >
+                {targetRoleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           {channel === "EMAIL" && (
             <Input

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { cn, PROCEDURE_TYPES, QUALIFIED_STATUS_LABELS, REP_STATUS_LABELS } from "@/lib/utils";
 import { Plus, X } from "lucide-react";
+import { CompanyInviteButton } from "@/components/company/company-invite-button";
 
 interface Rep {
   id: string;
@@ -275,10 +276,13 @@ export function CompanyRepsPage({
             {reps.length} field rep{reps.length !== 1 ? "s" : ""} · {companyName}
           </p>
         </div>
-        <Button onClick={() => setShowAddModal(true)}>
-          <Plus className="h-4 w-4" />
-          Add Rep
-        </Button>
+        <div className="flex gap-2">
+          <CompanyInviteButton />
+          <Button onClick={() => setShowAddModal(true)}>
+            <Plus className="h-4 w-4" />
+            Add Rep
+          </Button>
+        </div>
       </div>
 
       {successMessage && (
