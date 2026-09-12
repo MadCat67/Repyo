@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -195,6 +196,7 @@ export function AdminUsersPage({ userName }: { userName: string }) {
                 <th className="px-4 py-3">User</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Company</th>
+                <th className="px-4 py-3">Authorization</th>
               </tr>
             </thead>
             <tbody>
@@ -216,6 +218,14 @@ export function AdminUsersPage({ userName }: { userName: string }) {
                     </select>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{u.company?.name ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/admin/users/${u.id}/authorization`}
+                      className="text-sm font-medium text-rose-600 hover:underline"
+                    >
+                      View dossier
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

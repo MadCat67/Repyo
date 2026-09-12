@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { PortalShell } from "@/components/layout/portal-shell";
 import { Button } from "@/components/ui/button";
 import { DomainTagInput } from "@/components/shared/domain-tag-input";
@@ -329,6 +330,12 @@ export function AdminOrganizationsPage({ userName }: { userName: string }) {
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2">
+                              <Link
+                                href={`/admin/users/${member.userId}/authorization`}
+                                className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                              >
+                                Dossier
+                              </Link>
                               {member.accountStatus === "PENDING_APPROVAL" && (
                                 <Button
                                   size="sm"
